@@ -1,0 +1,23 @@
+# Stage 1: build
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install
+
+COPY index.html vite.config.js ./
+COPY public ./public
+COPY src ./src
+
+# The frontend talks to backend via the browser — so the API URL must be
+# the host-accessible backend address (localhost:8000), not the internal one.
+# We proxy /api → backend in nginx instead of baking a URL into the build.
+RUN npm run build
+
+# Stage 2: serve
+FROM nginx:alpine
+
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80

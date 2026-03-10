@@ -1,0 +1,94 @@
+const BASE = "/api";
+
+async function post(path, body, signal) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function postStream(path, body, onLine, signal) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || err.error || `HTTP ${res.status}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed) onLine(JSON.parse(trimmed));
+    }
+  }
+  if (buffer.trim()) onLine(JSON.parse(buffer.trim()));
+}
+
+async function postStreamLast(path, body, signal) {
+  return new Promise((resolve, reject) => {
+    let last = null;
+    postStream(path, body, (data) => {
+      if (data.cancelled) { reject(new Error("cancelled")); return; }
+      last = data;
+    }, signal)
+      .then(() => last ? resolve(last) : reject(new Error("No result received")))
+      .catch(reject);
+  });
+}
+
+export const api = {
+  // taskId is a unique string — backend registers it for cancellation
+  async analyzePage(url, settings, taskId, signal, scanMode = "shallow") {
+    return postStreamLast("/analyze", { url, settings, task_id: taskId, scan_mode: scanMode }, signal);
+  },
+
+  // Tell the backend to cancel a running task immediately
+  async cancelTask(taskId) {
+    try {
+      await fetch(`${BASE}/cancel/${taskId}`, { method: "POST" });
+    } catch {}
+  },
+
+  async crawl(url, maxPages, signal) {
+    return post("/crawl", { url, max_pages: maxPages }, signal);
+  },
+
+  async generateEmail(scanResult, settings, dashboardScreenshot, signal) {
+    return postStreamLast("/generate-email", {
+      scan_result: scanResult,
+      settings,
+      dashboard_screenshot: dashboardScreenshot || null,
+    }, signal);
+  },
+
+  async sendEmail(to, subject, html, settings) {
+    return post("/send-email", { to, subject, html, settings });
+  },
+
+  async agentChat(messages, scanContext, settings, signal) {
+    return post("/agent-chat", { messages, scan_context: scanContext, settings }, signal);
+  },
+
+  async health() {
+    const res = await fetch("/api/health");
+    return res.ok;
+  },
+};

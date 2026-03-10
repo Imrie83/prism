@@ -1,0 +1,38 @@
+services:
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "5174:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - SCREENSHOT_SERVICE_URL=http://screenshot:3000
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    depends_on:
+      - screenshot
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  screenshot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.screenshot
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    # Playwright needs these for headless Chromium
+    shm_size: 2gb
+
+volumes: {}
