@@ -5,12 +5,16 @@ Run with: python -m uvicorn main:app --reload --port 8000
 
 import asyncio
 import json
+import os
 import smtplib
 import ssl
 import traceback
+from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
+
+from tinydb import TinyDB, Query
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -26,6 +30,52 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Database ─────────────────────────────────────────────────────────────────
+os.makedirs("/app/data", exist_ok=True)
+db = TinyDB("/app/data/db.json", indent=2, ensure_ascii=False)
+ScanRecord = Query()
+
+def db_upsert_scan(data: dict):
+    """Upsert a scan record keyed by url. Preserves existing email block."""
+    url = data.get("url", "")
+    if not url:
+        return
+    existing = db.get(ScanRecord.url == url)
+    email_block = existing.get("email") if existing else None
+    record = {
+        "url":          url,
+        "scan_mode":    data.get("scan_mode", "shallow"),
+        "score":        data.get("score", 0),
+        "title":        data.get("title", ""),
+        "summary":      data.get("summary", ""),
+        "total_issues": data.get("totalIssues", 0),
+        "issue_counts": data.get("issueCounts", {}),
+        "issues":       data.get("issues", []),
+        "screenshot_b64": data.get("screenshot", ""),
+        "scanned_at":   datetime.now(timezone.utc).isoformat(),
+    }
+    if email_block:
+        record["email"] = email_block
+    db.upsert(record, ScanRecord.url == url)
+    print(f"[db] upserted scan for {url}")
+
+def db_update_email(url: str, recipient: str, subject: str, html: str):
+    """Update the email block for a URL after sending."""
+    existing = db.get(ScanRecord.url == url)
+    if not existing:
+        print(f"[db] ⚠ no scan record for {url} — email block not saved")
+        return
+    email_block = {
+        "recipient":    recipient,
+        "subject":      subject,
+        "html":         html,
+        "sent_at":      datetime.now(timezone.utc).isoformat(),
+        "got_response": existing.get("email", {}).get("got_response", False),
+    }
+    db.update({"email": email_block}, ScanRecord.url == url)
+    print(f"[db] email record saved for {url} → {recipient}")
+
 
 # ── Task registry — allows frontend to cancel running AI tasks ────────────────
 # Maps task_id → (asyncio.Task, asyncio.Event)
@@ -104,6 +154,7 @@ class SendEmailRequest(BaseModel):
     to: str
     subject: str
     html: str
+    url: str = ""   # source URL — used to link email record to scan in DB
     settings: SendEmailSettings
 
 
@@ -156,12 +207,13 @@ For EACH issue found, provide:
 - location: brief description of WHERE on the page (e.g. "hero section", "navigation bar", "footer")
 - original: the exact text or describe the visual element (if applicable)
 - suggestion: specific, actionable fix
-- explanation: why this matters specifically to Western/English-speaking visitors
+- explanation: brief reason this issue matters for the target audience
 
 Count ALL issues you find across the page. Then return full detail for the 8 most impactful only (highest severity first, variety across text/visual/UX). Report the real total count separately.
 
 Keep field values concise — location (≤8 words), original (≤15 words), suggestion (≤20 words), explanation (≤20 words).
 
+LANGUAGE INSTRUCTIONS — follow exactly:
 {language_instruction}
 
 Return JSON only — no markdown, no code fences, no explanation before or after.
@@ -306,7 +358,18 @@ async def call_openai(prompt: str, system: str, api_key: str, model: str, image_
 async def call_claude(prompt: str, system: str, api_key: str, model: str, image_b64: str | None = None) -> tuple[str, dict]:
     content: list = []
     if image_b64:
-        content.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}})
+        # Strip data URI prefix if present (e.g. "data:image/jpeg;base64,")
+        clean_b64 = image_b64
+        if "," in image_b64[:50]:
+            clean_b64 = image_b64.split(",", 1)[1]
+        # Detect actual format from first bytes
+        import base64 as _b64
+        try:
+            header = _b64.b64decode(clean_b64[:20])
+            media_type = "image/png" if header[:4] == b"\x89PNG" else "image/jpeg"
+        except Exception:
+            media_type = "image/jpeg"
+        content.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": clean_b64}})
     content.append({"type": "text", "text": prompt})
     print(f"[claude] ▶ POST messages model={model} | has_image={image_b64 is not None} | prompt_chars={len(system)+len(prompt)}")
     async with httpx.AsyncClient(timeout=None) as client:
@@ -315,7 +378,24 @@ async def call_claude(prompt: str, system: str, api_key: str, model: str, image_
             headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
             json={"model": model, "max_tokens": 8192, "system": system, "messages": [{"role": "user", "content": content}]},
         )
-        r.raise_for_status()
+        if not r.is_success:
+            err_body = ""
+            try: err_body = r.json()
+            except: err_body = r.text[:500]
+            print(f"[claude] ✗ {r.status_code} error body: {err_body}")
+            # If image is causing issues, retry without it
+            if r.status_code == 400 and image_b64 and "image" in str(err_body).lower():
+                print("[claude] ⚠ Retrying without image due to 400 error")
+                content_no_img = [c for c in content if c.get("type") != "image"]
+                r2 = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+                    json={"model": model, "max_tokens": 8192, "system": system, "messages": [{"role": "user", "content": content_no_img}]},
+                )
+                r2.raise_for_status()
+                r = r2
+            else:
+                r.raise_for_status()
         rj = r.json()
         reply = rj["content"][0]["text"]
         u = rj.get("usage", {})
@@ -715,9 +795,10 @@ async def _do_analyze(req: AnalyzeRequest, cancel_event: asyncio.Event | None = 
             "English-speaking visitors could gain; focus on potential, never mention problems or failures"
         )
         language_instruction = (
-            "Write the summary in Japanese. "
-            "Write explanation in Japanese (this appears in the client-facing report card). "
-            "Write location, original, and suggestion in English (these are for internal use only)."
+            "Write the summary field in Japanese. "
+            "Write the explanation field in Japanese — this text appears in the client-facing report card shown to the Japanese business owner. "
+            "Write location, original, and suggestion in English (internal use only). "
+            "Do NOT write explanation in English under any circumstances."
         )
     system_prompt = VISION_SYSTEM_PROMPT.format(
         summary_instruction=summary_instruction,
@@ -749,6 +830,12 @@ async def _do_analyze(req: AnalyzeRequest, cancel_event: asyncio.Event | None = 
 
     total = time.monotonic() - t0
     print(f"[analyze] ═══ DONE in {total:.1f}s | score={data['score']} | issues: high={data['issueCounts']['high']} med={data['issueCounts']['medium']} low={data['issueCounts']['low']} | tokens={usage.get('total_tokens','?')})")
+    # Auto-save to DB (shallow/batch only — deep scans are internal, not outreach)
+    if req.scan_mode in ("shallow", "batch"):
+        try:
+            db_upsert_scan(data)
+        except Exception as db_err:
+            print(f"[db] ⚠ save failed: {db_err}")
     return data
 
 
@@ -1184,9 +1271,6 @@ async def _do_generate_email(prompt: str, system: str, ai_settings: AISettings,
     </p>
   </td></tr>
 
-  <!-- SECTION DIVIDER -->
-  <tr><td>{hr_section}</td></tr>
-
   <!-- REPORT CARD -->
   <tr><td style="padding:0 40px;">
     {card_block}
@@ -1249,9 +1333,145 @@ async def send_email(req: SendEmailRequest):
             smtp.ehlo()
             smtp.login(s.gmail_address, s.gmail_app_password)
             smtp.sendmail(s.gmail_address, req.to, msg.as_string())
+        # Save email record to DB
+        try:
+            db_update_email(req.url, req.to, req.subject, req.html)
+        except Exception as db_err:
+            print(f"[db] ⚠ email save failed: {db_err}")
         return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(502, f"Failed to send: {e}")
+
+
+# ── History endpoints ────────────────────────────────────────────────────────
+
+@app.get("/api/history")
+async def get_history(page: int = 1, per_page: int = 20):
+    """Paginated list of all scan records (summary fields only, no screenshot)."""
+    all_records = db.all()
+    # Sort by scanned_at descending
+    all_records.sort(key=lambda r: r.get("scanned_at", ""), reverse=True)
+    total = len(all_records)
+    start = (page - 1) * per_page
+    page_records = all_records[start:start + per_page]
+    # Strip screenshot from list view
+    slim = []
+    for r in page_records:
+        slim.append({
+            "url":          r.get("url"),
+            "scan_mode":    r.get("scan_mode"),
+            "score":        r.get("score"),
+            "title":        r.get("title"),
+            "total_issues": r.get("total_issues"),
+            "issue_counts": r.get("issue_counts"),
+            "scanned_at":   r.get("scanned_at"),
+            "email": {
+                "recipient":    r.get("email", {}).get("recipient"),
+                "sent_at":      r.get("email", {}).get("sent_at"),
+                "got_response": r.get("email", {}).get("got_response", False),
+            } if r.get("email") else None,
+        })
+    return {"records": slim, "total": total, "page": page, "per_page": per_page}
+
+
+@app.get("/api/history/check")
+async def check_history(url: str):
+    """Check if a URL has been scanned before. Called before starting a new scan."""
+    record = db.get(ScanRecord.url == url)
+    if not record:
+        return {"exists": False}
+    return {
+        "exists":     True,
+        "score":      record.get("score"),
+        "title":      record.get("title"),
+        "scanned_at": record.get("scanned_at"),
+        "email": {
+            "recipient":    record.get("email", {}).get("recipient"),
+            "sent_at":      record.get("email", {}).get("sent_at"),
+            "got_response": record.get("email", {}).get("got_response", False),
+        } if record.get("email") else None,
+    }
+
+
+@app.get("/api/history/entry")
+async def get_history_entry(url: str):
+    """Full scan record including screenshot — for rehydrating the results page."""
+    record = db.get(ScanRecord.url == url)
+    if not record:
+        raise HTTPException(404, "No record found for this URL")
+    return record
+
+
+@app.patch("/api/history/response")
+async def toggle_response(url: str):
+    """Toggle got_response flag for a URL's email record."""
+    record = db.get(ScanRecord.url == url)
+    if not record or not record.get("email"):
+        raise HTTPException(404, "No email record found for this URL")
+    current = record["email"].get("got_response", False)
+    email_block = {**record["email"], "got_response": not current}
+    db.update({"email": email_block}, ScanRecord.url == url)
+    return {"got_response": not current}
+
+
+@app.delete("/api/history/entry")
+async def delete_history_entry(url: str):
+    """Delete a scan record entirely."""
+    removed = db.remove(ScanRecord.url == url)
+    if not removed:
+        raise HTTPException(404, "No record found for this URL")
+    return {"ok": True}
+
+
+class SaveEmailDraftRequest(BaseModel):
+    html: str
+
+@app.post("/api/history/save-email")
+async def save_email_draft(url: str, subject: str, body: SaveEmailDraftRequest):
+    """Save a generated (but not yet sent) email draft to the DB record."""
+    record = db.get(ScanRecord.url == url)
+    if not record:
+        raise HTTPException(404, "No scan record for this URL")
+    existing_email = record.get("email") or {}
+    email_block = {
+        **existing_email,
+        "subject": subject,
+        "html":    body.html,
+        # preserve recipient/sent_at/got_response if they exist
+    }
+    db.update({"email": email_block}, ScanRecord.url == url)
+    return {"ok": True}
+
+
+@app.post("/api/history/update-email-recipient")
+async def update_email_recipient(url: str, recipient: str):
+    """Update recipient in DB when user types in email drawer."""
+    record = db.get(ScanRecord.url == url)
+    if not record:
+        return {"ok": False}
+    existing_email = record.get("email") or {}
+    db.update({"email": {**existing_email, "recipient": recipient}}, ScanRecord.url == url)
+    return {"ok": True}
+
+
+@app.post("/api/history/save-deep-scan")
+async def save_deep_scan(body: dict):
+    """Explicitly save a deep scan to history when user requests it."""
+    try:
+        db_upsert_scan(body)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/history/check")
+async def check_url_in_history(url: str):
+    record = db.get(ScanRecord.url == url)
+    if not record:
+        return {"exists": False}
+    return {"exists": True, "record": record}
 
 
 @app.post("/api/agent-chat")

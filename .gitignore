@@ -8,3 +8,6 @@ __pycache__/
 *.map
 .DS_Store
 Thumbs.db
+-e 
+# Local TinyDB
+data/db.json

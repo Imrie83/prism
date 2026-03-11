@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { Search, Layers, List, Play, Square, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useScanStore } from "../stores/scanStore";
+import { useEmailStore } from "../stores/emailStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useAgentStore } from "../stores/agentStore";
 import { api } from "../lib/api";
@@ -27,9 +28,8 @@ export default function ScanPage() {
 
   const [localUrl, setLocalUrl] = useState("");
   const [batchText, setBatchText] = useState("");
-  // Track scanning state locally so button is disabled the instant it's clicked,
-  // before the store async action sets status = "scanning"
   const [localScanning, setLocalScanning] = useState(false);
+  const [historyBanner, setHistoryBanner] = useState(null); // { score, title, scanned_at, email }
 
   const isScanning = store.status === "scanning" || localScanning;
 
@@ -194,11 +194,31 @@ export default function ScanPage() {
     store.finishBatch(runId);
   }
 
-  function handleRun() {
+  async function handleRun() {
     if (isScanning) return;
+    const url = localUrl.trim();
+
+    // Always check history before scanning (shallow/deep only — batch handles its own)
+    if (store.activeMode !== "batch" && url) {
+      try {
+        const check = await api.checkHistory(url);
+        if (check.exists) {
+          setHistoryBanner(check);
+          return; // stop — user must choose from the banner
+        }
+      } catch {} // ignore network errors — proceed with scan
+    }
+
+    setHistoryBanner(null);
     if (store.activeMode === "shallow") return runShallow();
     if (store.activeMode === "deep")    return runDeep();
     if (store.activeMode === "batch")   return runBatch();
+  }
+
+  function handleScanAnyway() {
+    setHistoryBanner(null);
+    if (store.activeMode === "shallow") runShallow();
+    else if (store.activeMode === "deep") runDeep();
   }
 
   const activeRun = (() => {
@@ -264,6 +284,44 @@ export default function ScanPage() {
             </div>
           </div>
         )}
+
+        {/* History banner — shown when URL has been scanned before */}
+        <AnimatePresence>
+          {historyBanner && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+              style={{
+                marginBottom: 16, padding: "14px 18px",
+                background: "var(--blue-glow)", border: "1px solid var(--blue-line)",
+                borderRadius: "var(--radius-lg)", display: "flex", alignItems: "flex-start", gap: 12,
+              }}>
+              <AlertCircle size={16} style={{ color: "var(--blue)", flexShrink: 0, marginTop: 1 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: "var(--ink1)", marginBottom: 3 }}>
+                  Already scanned{historyBanner.title ? ` — ${historyBanner.title}` : ""}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--ink2)", marginBottom: 10 }}>
+                  Score: <strong>{historyBanner.score}/100</strong>
+                  {" · "}Scanned {new Date(historyBanner.scanned_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                  {historyBanner.email?.sent_at && (
+                    <> · <span style={{ color: "var(--green)" }}>
+                      Email sent to {historyBanner.email.recipient} on {new Date(historyBanner.email.sent_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+                    </span></>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn btn--sm btn--ghost"
+                    onClick={() => { store.setActiveTab("history"); setHistoryBanner(null); }}>
+                    View in History
+                  </button>
+                  <button className="btn btn--sm btn--primary" onClick={handleScanAnyway}>
+                    Scan Again
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Batch URL list */}
         {store.activeMode === "batch" && (

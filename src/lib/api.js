@@ -79,9 +79,6 @@ export const api = {
     }, signal);
   },
 
-  async sendEmail(to, subject, html, settings) {
-    return post("/send-email", { to, subject, html, settings });
-  },
 
   async agentChat(messages, scanContext, settings, signal) {
     return post("/agent-chat", { messages, scan_context: scanContext, settings }, signal);
@@ -90,5 +87,44 @@ export const api = {
   async health() {
     const res = await fetch("/api/health");
     return res.ok;
+  },
+
+  // ── History ───────────────────────────────────────────────────────────────
+  async getHistory(page = 1, perPage = 20) {
+    const res = await fetch(`${BASE}/history?page=${page}&per_page=${perPage}`);
+    return res.json();
+  },
+
+  async checkHistory(url) {
+    const res = await fetch(`${BASE}/history/check?url=${encodeURIComponent(url)}`);
+    return res.json();
+  },
+
+  async getHistoryEntry(url) {
+    const res = await fetch(`${BASE}/history/entry?url=${encodeURIComponent(url)}`);
+    if (!res.ok) throw new Error("Not found");
+    return res.json();
+  },
+
+  async toggleResponse(url) {
+    const res = await fetch(`${BASE}/history/response?url=${encodeURIComponent(url)}`, { method: "PATCH" });
+    return res.json();
+  },
+
+  async deleteHistoryEntry(url) {
+    const res = await fetch(`${BASE}/history/entry?url=${encodeURIComponent(url)}`, { method: "DELETE" });
+    return res.json();
+  },
+
+  async saveEmailDraft(url, subject, html) {
+    const res = await fetch(
+      `${BASE}/history/save-email?url=${encodeURIComponent(url)}&subject=${encodeURIComponent(subject)}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ html }) }
+    );
+    return res.json();
+  },
+
+  async sendEmail(to, subject, html, settings, url = "") {
+    return post("/send-email", { to, subject, html, url, settings });
   },
 };

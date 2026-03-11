@@ -1,6 +1,18 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
 
+async function saveDraftToDB(url, subject, html) {
+  try {
+    await fetch(`/api/history/save-email?url=${encodeURIComponent(url)}&subject=${encodeURIComponent(subject)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ html }),
+    });
+  } catch (e) {
+    console.warn("[emailStore] draft save failed:", e.message);
+  }
+}
+
 // emails: { [url]: { status, subject, htmlContent, error, recipientEmail, tokens, generationCount } }
 // tokens accumulates across all re-generations for that URL
 
@@ -61,6 +73,8 @@ export const useEmailStore = create((set, get) => ({
           },
         };
       });
+      // Save draft to DB immediately — don't wait for send
+      saveDraftToDB(url, data.subject, data.html);
     } catch (e) {
       set(s => ({ emails: { ...s.emails, [url]: { ...s.emails[url], status: "error", error: e.message } } }));
     }

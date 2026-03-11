@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Scan, BarChart3, Settings, Bot, Sun, Moon } from "lucide-react";
+import { Scan, BarChart3, Settings, Bot, Sun, Moon, History } from "lucide-react";
 import { useScanStore } from "../stores/scanStore";
 import { useAgentStore } from "../stores/agentStore";
 import { useEmailStore } from "../stores/emailStore";
@@ -133,6 +133,12 @@ export default function Sidebar({ onSettings, mobileOpen, darkMode, onToggleDark
               {totalRuns}
             </motion.span>
           )}
+        </button>
+
+        <button
+          className={`sidebar__item${activeTab === "history" ? " sidebar__item--active" : ""}`}
+          onClick={() => setActiveTab("history")}>
+          <History size={15} /> History
         </button>
 
         <span className="sidebar__section">Tools</span>

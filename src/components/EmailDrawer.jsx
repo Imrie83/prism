@@ -181,9 +181,9 @@ export default function EmailDrawer() {
         gmail_address: settings.gmailAddress,
         gmail_app_password: settings.gmailAppPassword,
         your_name: settings.yourName,
-      });
+      }, drawerUrl);
       useEmailStore.setState(s => ({
-        emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], status: "sent" } }
+        emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], status: "sent", sentAt: new Date().toISOString() } }
       }));
     } catch (e) {
       useEmailStore.setState(s => ({
@@ -195,6 +195,11 @@ export default function EmailDrawer() {
   const isOpen = !!drawerUrl;
   const isBusy = ["generating", "queued"].includes(emailData?.status);
   const hasContent = !!emailData?.htmlContent;
+  // Block send only when the email was previously sent (loaded from DB with a sent_at),
+  // AND hasn't been regenerated this session. No block if never sent before.
+  const hasBeenRegenerated = (emailData?.generationCount ?? 0) > 0;
+  const wasAlreadySent = !!emailData?.sentAt;  // set by emailStore after successful send
+  const sendBlocked = wasAlreadySent && !hasBeenRegenerated;
 
   return (
     <AnimatePresence>
@@ -290,18 +295,28 @@ export default function EmailDrawer() {
           </div>
 
           {/* Footer */}
-          <div className="email-drawer__footer">
-            <input type="email"
-              value={emailData?.recipientEmail || ""}
-              onChange={e => drawerUrl && store.setRecipient(drawerUrl, e.target.value)}
-              placeholder="recipient@company.co.jp"
-              style={{ flex:1 }} />
-            <button className="btn btn--primary" onClick={send}
-              disabled={!hasContent || !emailData?.recipientEmail || emailData?.status === "sent"}>
-              {emailData?.status === "sent"
-                ? <><Check size={13} /> Sent!</>
-                : <><Send size={13} /> Send</>}
-            </button>
+          <div className="email-drawer__footer" style={{ flexDirection: "column", gap: 8 }}>
+            {sendBlocked && (
+              <div style={{ fontSize: 11, color: "var(--blue)", background: "var(--blue-glow)",
+                border: "1px solid var(--blue-line)", borderRadius: "var(--radius)",
+                padding: "6px 10px", textAlign: "center", width: "100%" }}>
+                ⚠ Regenerate before sending — this email is from a previous session
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, width: "100%" }}>
+              <input type="email"
+                value={emailData?.recipientEmail || ""}
+                onChange={e => drawerUrl && store.setRecipient(drawerUrl, e.target.value)}
+                placeholder="recipient@company.co.jp"
+                style={{ flex:1 }} />
+              <button className="btn btn--primary" onClick={send}
+                disabled={!hasContent || !emailData?.recipientEmail || emailData?.status === "sent" || sendBlocked}
+                title={sendBlocked ? "Regenerate the email before sending" : undefined}>
+                {emailData?.status === "sent"
+                  ? <><Check size={13} /> Sent!</>
+                  : <><Send size={13} /> Send</>}
+              </button>
+            </div>
           </div>
         </motion.div>
       )}

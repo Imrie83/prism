@@ -19,6 +19,8 @@ services:
     environment:
       - SCREENSHOT_SERVICE_URL=http://screenshot:3000
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    volumes:
+      - ./data:/app/data
     depends_on:
       - screenshot
     restart: unless-stopped

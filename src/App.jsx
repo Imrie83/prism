@@ -7,6 +7,7 @@ import EmailDrawer from "./components/EmailDrawer";
 import SettingsModal from "./components/SettingsModal";
 import ScanPage from "./pages/ScanPage";
 import ResultsPage from "./pages/ResultsPage";
+import HistoryPage from "./pages/HistoryPage";
 import { useScanStore } from "./stores/scanStore";
 import { useEmailStore } from "./stores/emailStore";
 import { useAgentStore } from "./stores/agentStore";
@@ -16,6 +17,7 @@ const VERSION = __APP_VERSION__;
 const TAB_TITLES = {
   scan:    "New Audit",
   results: "Results",
+  history: "Outreach History",
 };
 
 // Read computed CSS clamp value for --email-w
@@ -103,6 +105,7 @@ export default function App() {
             style={{ flex: 1 }}>
             {activeTab === "scan"    && <ScanPage />}
             {activeTab === "results" && <ResultsPage />}
+            {activeTab === "history" && <HistoryPage />}
           </motion.div>
         </AnimatePresence>
       </motion.div>
