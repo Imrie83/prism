@@ -181,6 +181,7 @@ export default function EmailDrawer() {
         gmail_address: settings.gmailAddress,
         gmail_app_password: settings.gmailAppPassword,
         your_name: settings.yourName,
+        from_address: settings.fromAddress,
       }, drawerUrl);
       useEmailStore.setState(s => ({
         emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], status: "sent", sentAt: new Date().toISOString() } }

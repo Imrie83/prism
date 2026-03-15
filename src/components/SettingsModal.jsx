@@ -258,6 +258,14 @@ export default function SettingsModal({ onClose }) {
               </div>
               <PasswordField label="App Password" fieldKey="gmailAppPassword" />
             </div>
+            <div className="field-row">
+              <div className="field">
+                <label>From Address (visible to recipient)</label>
+                <input type="email" value={s.fromAddress}
+                  placeholder="zielinski.marcin@shinrai.pro"
+                  onChange={e => s.setField("fromAddress", e.target.value)} />
+              </div>
+            </div>
           </div>
 
         </div>

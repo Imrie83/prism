@@ -148,6 +148,7 @@ class SendEmailSettings(BaseModel):
     gmail_address: str
     gmail_app_password: str
     your_name: str = "Marcin Zielinski"
+    from_address: str = ""
 
 
 class SendEmailRequest(BaseModel):
@@ -1319,7 +1320,8 @@ async def send_email(req: SendEmailRequest):
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = req.subject
-        msg["From"] = f"{s.your_name} <{s.gmail_address}>"
+        visible_from = s.from_address.strip() if s.from_address.strip() else s.gmail_address
+        msg["From"] = f"{s.your_name} <{visible_from}>"
         msg["To"] = req.to
         msg.attach(MIMEText(req.html, "html", "utf-8"))
         # Use STARTTLS on port 587 — more reliable than SMTP_SSL in Docker
