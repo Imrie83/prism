@@ -94,6 +94,7 @@ export default function EmailDrawer() {
   const { shallowHistory, batchHistory } = useScanStore();
   const { drawerUrl, closeDrawer } = store;
   const [activeTab, setActiveTab] = useState("edit"); // "edit" | "preview"
+  const [justSent, setJustSent] = useState(false);
 
   // Find the scan result for this URL across all history banks
   const scanResult = (() => {
@@ -110,6 +111,7 @@ export default function EmailDrawer() {
 
   const emailData = drawerUrl ? store.getEmail(drawerUrl) : null;
   const prevUrl = useRef(null);
+  const externalUpdateRef = useRef(false);
 
   const editor = useEditor({
     extensions: [
@@ -120,6 +122,7 @@ export default function EmailDrawer() {
     ],
     content: "<p>Click <strong>Generate</strong> to create your outreach email.</p>",
     onUpdate: ({ editor }) => {
+      if (externalUpdateRef.current) return; // ignore updates we triggered ourselves
       if (drawerUrl) store.setHtmlContent(drawerUrl, editor.getHTML());
     },
   });
@@ -128,20 +131,27 @@ export default function EmailDrawer() {
   useEffect(() => {
     if (!editor || !drawerUrl) return;
     if (prevUrl.current !== drawerUrl) {
+      // URL changed — load stored content
       const stored = store.getEmail(drawerUrl)?.htmlContent;
+      externalUpdateRef.current = true;
       editor.commands.setContent(
         stored || "<p>Click <strong>Generate</strong> to create your outreach email.</p>",
         false
       );
+      setTimeout(() => { externalUpdateRef.current = false; }, 0);
       prevUrl.current = drawerUrl;
-    } else if (emailData?.status === "ready" && emailData?.htmlContent) {
+    } else if (emailData?.htmlContent) {
+      // Content updated externally (generation finished OR card rebuilt from checkbox)
       const current = editor.getHTML();
       if (current !== emailData.htmlContent) {
+        externalUpdateRef.current = true;
         editor.commands.setContent(emailData.htmlContent, false);
-        setActiveTab("preview"); // auto-switch to preview when content arrives
+        setTimeout(() => { externalUpdateRef.current = false; }, 0);
+        // Only auto-switch to preview on fresh generation, not card rebuilds
+        if (emailData?.status === "ready") setActiveTab("preview");
       }
     }
-  }, [drawerUrl, emailData?.status, emailData?.htmlContent]);
+  }, [drawerUrl, emailData?.htmlContent]);
 
   function getAISettings() {
     // Use email-specific provider/model if set, otherwise fall back to audit model
@@ -186,6 +196,8 @@ export default function EmailDrawer() {
       useEmailStore.setState(s => ({
         emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], status: "sent", sentAt: new Date().toISOString() } }
       }));
+      setJustSent(true);
+      setTimeout(() => setJustSent(false), 3000);
     } catch (e) {
       useEmailStore.setState(s => ({
         emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], error: e.message, status: "error" } }
@@ -307,8 +319,8 @@ export default function EmailDrawer() {
                 placeholder="recipient@company.co.jp"
                 style={{ flex:1 }} />
               <button className="btn btn--primary" onClick={send}
-                disabled={!hasContent || !emailData?.recipientEmail || emailData?.status === "sent"}>
-                {emailData?.status === "sent"
+                disabled={!hasContent || !emailData?.recipientEmail || justSent}>
+                {justSent
                   ? <><Check size={13} /> Sent!</>
                   : <><Send size={13} /> Send</>}
               </button>

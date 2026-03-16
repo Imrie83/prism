@@ -205,11 +205,13 @@ VISION_SYSTEM_PROMPT = """You are an expert English localisation, UX, and cross-
 
 You receive BOTH a screenshot of the page AND its structured semantic content. Use both together.
 
+IMPORTANT — LOGOS & BRAND MARKS: Do NOT flag logos, brand marks, or favicon images for containing Japanese text. Logos are intentional brand assets and should be ignored entirely when assessing translation issues.
+
 Analyse across these dimensions:
 
 TEXT & TRANSLATION
-- untranslated_japanese: Japanese text that should be in English
-- untranslated_image_text: Text embedded in images that is in Japanese
+- untranslated_japanese: Japanese text that should be in English (EXCLUDE logos and brand marks)
+- untranslated_image_text: Text embedded in images that is in Japanese (EXCLUDE logos and brand marks)
 - machine_translation: Stilted, unnatural, or clearly auto-translated English
 - grammar_error: Grammatical or spelling mistakes in English content
 - awkward_phrasing: Technically correct but unnatural-sounding English
@@ -231,6 +233,33 @@ VISUAL & LAYOUT (analyse these from the screenshot carefully)
 - western_ux_patterns: Missing patterns Westerners expect (hamburger menu, breadcrumbs, footer nav, social proof)
 - trust_signals: Missing trust indicators (testimonials, certifications, contact info prominently placed)
 
+JAPANESE WEB UX PATTERNS — pay special attention to these common issues that Western users find off-putting:
+- Marquee/ticker text scrolling across the screen
+- Excessive use of blinking or animated elements
+- Font sizes that vary wildly across a single page
+- Overuse of underlines on non-link text
+- Multiple competing banner ads or announcement bars stacked at the top
+- Tab-heavy navigation with 10+ items in the main nav
+- Walls of small-print text with no visual breathing room
+- Popup or overlay abuse on page load
+- Mobile viewport not configured (zoomed-out desktop layout on mobile)
+
+SCORING — be realistic and granular. Use the FULL 0–100 range:
+- 85–100: Near-perfect English readiness. Very minor polish only.
+- 70–84: Good foundation. A few notable issues but generally accessible to Westerners.
+- 50–69: Moderate issues. Western visitors will notice problems. Some friction.
+- 30–49: Significant issues. Core content is hard to navigate or understand.
+- 0–29: Major overhaul needed. Barely accessible to English-speaking audiences.
+Most real Japanese business sites score between 25–65. Do NOT cluster scores around 50–60. Be honest — if the site is poor, score it in the 20s or 30s. If it genuinely impresses, score it in the 80s.
+
+SEVERITY BALANCE — you MUST include a mix of severities:
+- High: 2–4 issues maximum. Reserve for genuinely blocking problems.
+- Medium: 2–4 issues.
+- Low: AT LEAST 1 low-severity issue. Low issues are real but minor — small polish items, subtle UX improvements, nice-to-haves.
+Never return all high or all medium. Every audit must have at least one low.
+
+VARIETY — spread issues across TEXT, VISUAL, and UX categories. Do not return 5+ issues all of the same type. Actively look for Japanese-specific UX anti-patterns (listed above) even on otherwise decent sites.
+
 For EACH issue found, provide:
 - type: one of the types above
 - severity: "high" | "medium" | "low"
@@ -239,7 +268,7 @@ For EACH issue found, provide:
 - suggestion: specific, actionable fix
 - explanation: brief reason this issue matters for the target audience
 
-Count ALL issues you find across the page. Then return full detail for the 8 most impactful only (highest severity first, variety across text/visual/UX). Report the real total count separately.
+Count ALL issues you find across the page. Then return full detail for the 8 most impactful only (highest severity first, variety across text/visual/UX — include at least one low). Report the real total count separately.
 
 Keep field values concise — location (≤8 words), original (≤15 words), suggestion (≤20 words), explanation (≤20 words).
 
@@ -256,7 +285,7 @@ Never place a bare double-quote inside a JSON string value.
   "summary": "{summary_instruction}",
   "title": "<detected page title or company name>",
   "totalIssues": <integer — total count of ALL issues found across the entire page>,
-  "issues": [top 8 issues with full detail],
+  "issues": [top 8 issues with full detail, at least one must be low severity],
   "issueCounts": {{ "high": N, "medium": N, "low": N }}
 }}"""
 
@@ -281,11 +310,18 @@ GOAL: Get them curious enough to visit {website} or reply.
 TONE: Warm and direct. Sound like a person, not a marketing department.
 No buzzwords: "leverage", "seamlessly", "holistic", "impactful", "unlock potential".
 
+VARIATION — every email must feel different. Vary:
+- The opening hook: sometimes lead with a genuine compliment about the design, sometimes the product/service, sometimes the ambition you sense in the site
+- The angle: sometimes focus on the untapped English-speaking audience, sometimes on trust-building, sometimes on the gap between the site's quality and its English presentation
+- The closing: sometimes a soft question, sometimes a direct invitation to visit the site, sometimes a gentle offer to share one specific finding
+- Sentence rhythm: mix short punchy sentences with longer reflective ones. Avoid formulaic paragraph lengths.
+
 CONTENT RULES:
 - jp_paragraphs: 2-3 short paragraphs in natural Japanese Keigo. Do NOT include 御担当者様 — it is added automatically.
 - en_paragraphs: 2-3 short paragraphs. Do NOT start with "Hi there" or any greeting — it is added automatically.
-- Start with something specific and genuine you liked about the site
+- Start with something specific and genuine you noticed about the site — the industry, a product detail, the visual style, or the company's apparent mission
 - Hint at opportunity for English-speaking visitors — never frame as criticism
+- Be specific to THIS site — avoid generic phrases that could apply to any Japanese business
 - Reference the audit report with ONE sentence only
 - Do NOT mention issue counts or specific problem names
 - Do NOT write any HTML — return plain text paragraphs only
@@ -1261,7 +1297,7 @@ async def _do_generate_email(prompt: str, system: str, ai_settings: AISettings,
             for p in paras if p
         )
 
-    card_block = f'<div style="margin:32px 0;">{report_card_html}</div>' if report_card_html else ""
+    card_block = f'<!--SHINRAI-CARD-START--><div style="margin:32px 0;">{report_card_html}</div><!--SHINRAI-CARD-END-->' if report_card_html else ""
 
     # CTA button style (reused for both sections)
     btn_style = (
@@ -1341,6 +1377,37 @@ async def _do_generate_email(prompt: str, system: str, ai_settings: AISettings,
 </body></html>"""
 
     return {"subject": subject, "html": html, "_tokens": usage}
+
+
+class RebuildCardRequest(BaseModel):
+    scan_result: dict[str, Any]
+    selected_issue_indices: list[int]  # indices into scan_result["issues"] to include
+
+@app.post("/api/rebuild-card")
+async def rebuild_card(req: RebuildCardRequest):
+    """Rebuild the report card HTML with a specific subset of issues.
+    Does NOT call AI — just re-renders the template with the chosen issues.
+    Returns the full email HTML with the new card swapped in.
+    """
+    scan = dict(req.scan_result)
+    all_issues = scan.get("issues", [])
+    # Filter to selected indices only (clamp to valid range)
+    selected = [all_issues[i] for i in req.selected_issue_indices if 0 <= i < len(all_issues)]
+    scan_with_selected = {**scan, "issues": selected}
+
+    # For deep scans the issues are in English — translate before building card
+    scan_mode = scan.get("scan_mode", "shallow")
+    if scan_mode == "deep":
+        # We can't do async translation without AI settings here, so just use as-is
+        # (deep mode rebuild is a best-effort — explanations stay in English)
+        card_html = _build_report_card_html(scan_with_selected)
+    else:
+        card_html = _build_report_card_html(scan_with_selected)
+
+    return {
+        "card_html": card_html,
+        "card_block": f'<!--SHINRAI-CARD-START--><div style="margin:32px 0;">{card_html}</div><!--SHINRAI-CARD-END-->',
+    }
 
 
 @app.post("/api/send-email")

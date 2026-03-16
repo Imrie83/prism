@@ -30,6 +30,8 @@ export const useEmailStore = create((set, get) => ({
     set(s => ({ emails: { ...s.emails, [url]: { ...(s.emails[url] || {}), subject } } })),
   setHtmlContent: (url, html) =>
     set(s => ({ emails: { ...s.emails, [url]: { ...(s.emails[url] || {}), htmlContent: html } } })),
+  setCheckedIssues: (url, indices) =>
+    set(s => ({ emails: { ...s.emails, [url]: { ...(s.emails[url] || {}), checkedIssues: indices } } })),
 
   generate: async (url, scanResult, aiSettings) => {
     const { emails } = get();

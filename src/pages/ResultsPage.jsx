@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, ExternalLink, Mail, TrendingDown, Clock, ChevronDown } from "lucide-react";
 import { useScanStore } from "../stores/scanStore";
@@ -8,6 +8,7 @@ import ScoreRing from "../components/ScoreRing";
 import IssueCard from "../components/IssueCard";
 import ScreenshotLightbox from "../components/ScreenshotLightbox";
 import TokenBadge from "../components/TokenBadge";
+import { api } from "../lib/api";
 
 // ── Tiny helpers ─────────────────────────────────────────────────────────────
 function scoreColor(s) {
@@ -142,14 +143,65 @@ function ResultAside({ result, onLightbox, animate = true }) {
   );
 }
 
-function IssueList({ issues }) {
-  const sorted = [...issues].sort((a, b) => {
-    const o = { high: 0, medium: 1, low: 2 };
-    return (o[a.severity] ?? 3) - (o[b.severity] ?? 3);
-  });
+function IssueList({ issues, scanResult }) {
+  const emailStore = useEmailStore();
+  const url = scanResult?.url;
+  const emailData = useEmailStore(s => url ? s.emails[url] : null);
+
+  // Default checked set:
+  // - If email was generated after this change, checkedIssues is already stored
+  // - If email pre-existed (no checkedIssues stored), default to first 5 by original index
+  const allIndices = issues.map((_, i) => i);
+  const checkedIssues = emailData?.checkedIssues ?? allIndices.slice(0, 5);
+
+  const sorted = [...issues].map((issue, origIndex) => ({ issue, origIndex }))
+    .sort((a, b) => {
+      const o = { high: 0, medium: 1, low: 2 };
+      return (o[a.issue.severity] ?? 3) - (o[b.issue.severity] ?? 3);
+    });
+
+  const hasEmail = !!emailData?.htmlContent;
+
+  const handleCheck = useCallback(async (origIndex, checked) => {
+    if (!url || !scanResult) return;
+    const next = checked
+      ? [...new Set([...checkedIssues, origIndex])].sort((a, b) => a - b)
+      : checkedIssues.filter(i => i !== origIndex);
+    emailStore.setCheckedIssues(url, next);
+    if (!hasEmail) return;
+    try {
+      const { card_block } = await api.rebuildCard(scanResult, next);
+      const currentHtml = emailStore.getEmail(url)?.htmlContent || "";
+      // Replace only the sentinel-wrapped card block — safe even if called multiple times
+      const updated = currentHtml.includes("<!--SHINRAI-CARD-START-->")
+        ? currentHtml.replace(/<!--SHINRAI-CARD-START-->[\s\S]*?<!--SHINRAI-CARD-END-->/, card_block)
+        : currentHtml; // no sentinel = old email, can't safely replace, leave as-is
+      emailStore.setHtmlContent(url, updated);
+    } catch (e) {
+      console.warn("[IssueList] card rebuild failed:", e.message);
+    }
+  }, [url, scanResult, checkedIssues, hasEmail, emailStore]);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-      {sorted.map((issue, i) => <IssueCard key={i} issue={issue} defaultOpen={i === 0} index={i} />)}
+    <div>
+      {hasEmail && (
+        <div style={{ fontSize: 11, color: "var(--ink3)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+          <Mail size={11} />
+          Check issues to include in email report card
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {sorted.map(({ issue, origIndex }, i) => (
+          <IssueCard
+            key={origIndex}
+            issue={issue}
+            defaultOpen={i === 0}
+            index={i}
+            checked={hasEmail ? checkedIssues.includes(origIndex) : undefined}
+            onCheckedChange={hasEmail ? (val) => handleCheck(origIndex, val) : undefined}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -174,7 +226,7 @@ function ShallowView({ onLightbox }) {
           <EmailButton url={result.url} />
       </div>
       <div className="results-layout">
-        <div className="results-layout__main"><IssueList issues={result.issues || []} /></div>
+        <div className="results-layout__main"><IssueList issues={result.issues || []} scanResult={result} /></div>
         <div className="results-layout__aside"><ResultAside result={result} onLightbox={onLightbox} /></div>
       </div>
     </>
@@ -282,7 +334,7 @@ function DeepView({ onLightbox }) {
             {page.result ? (
               <div className="results-layout">
                 <div className="results-layout__main">
-                  <IssueList issues={page.result.issues || []} />
+                  <IssueList issues={page.result.issues || []} scanResult={page.result} />
                   {!page.result.issues?.length && <div style={{ fontSize: 13, color: "var(--ink3)", padding: "20px 0" }}>No issues found.</div>}
                 </div>
                 <div className="results-layout__aside">
@@ -350,6 +402,11 @@ function BatchView({ onLightbox, onAutoFollow }) {
                 <a href={page.url} target="_blank" rel="noopener noreferrer" className="batch-page-header__url">
                   {page.url} <ExternalLink size={10} />
                 </a>
+                {page.result?._tokens && (
+                  <div style={{ marginTop: 4 }}>
+                    <TokenBadge tokens={page.result._tokens} costType="audit" />
+                  </div>
+                )}
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
                 {page.result && <ScoreRing score={page.result.score ?? 0} size={88} />}
@@ -360,7 +417,7 @@ function BatchView({ onLightbox, onAutoFollow }) {
             {page.result ? (
               <div className="results-layout">
                 <div className="results-layout__main">
-                  <IssueList issues={page.result.issues || []} />
+                  <IssueList issues={page.result.issues || []} scanResult={page.result} />
                   {!page.result.issues?.length && <div style={{ fontSize: 13, color: "var(--ink3)", padding: "20px 0" }}>No issues found.</div>}
                 </div>
                 <div className="results-layout__aside">

@@ -60,9 +60,6 @@ export default function HistoryPage() {
   const finishShallow = useScanStore(s => s.finishShallow);
   const startShallow = useScanStore(s => s.startShallow);
   const openDrawerFor = useEmailStore(s => s.openDrawerFor);
-  const setRecipient = useEmailStore(s => s.setRecipient);
-  const setSubject = useEmailStore(s => s.setSubject);
-  const setHtmlContent = useEmailStore(s => s.setHtmlContent);
 
   const load = useCallback(async (p = page) => {
     setLoading(true);
@@ -132,14 +129,18 @@ export default function HistoryPage() {
 
       // Pre-fill email drawer state if email exists
       if (full.email) {
-        if (full.email.recipient) setRecipient(full.url, full.email.recipient);
-        if (full.email.subject)   setSubject(full.url, full.email.subject);
-        if (full.email.html)      setHtmlContent(full.url, full.email.html);
-        if (full.email.sent_at) {
-          useEmailStore.setState(s => ({
-            emails: { ...s.emails, [full.url]: { ...(s.emails[full.url] || {}), sentAt: full.email.sent_at } }
-          }));
-        }
+        const emailPatch = {
+          ...(useEmailStore.getState().emails[full.url] || {}),
+        };
+        if (full.email.recipient) emailPatch.recipientEmail = full.email.recipient;
+        if (full.email.subject)   emailPatch.subject        = full.email.subject;
+        if (full.email.html)      emailPatch.htmlContent    = full.email.html;
+        if (full.email.sent_at)   emailPatch.sentAt         = full.email.sent_at;
+        // Derive status: sent > ready (has html) > undefined
+        emailPatch.status = full.email.sent_at ? "sent" : full.email.html ? "ready" : undefined;
+        useEmailStore.setState(s => ({
+          emails: { ...s.emails, [full.url]: emailPatch },
+        }));
       }
 
       setActiveTab("results");

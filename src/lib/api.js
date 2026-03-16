@@ -127,4 +127,8 @@ export const api = {
   async sendEmail(to, subject, html, settings, url = "") {
     return post("/send-email", { to, subject, html, url, settings });
   },
+
+  async rebuildCard(scanResult, selectedIndices) {
+    return post("/rebuild-card", { scan_result: scanResult, selected_issue_indices: selectedIndices });
+  },
 };

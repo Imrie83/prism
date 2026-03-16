@@ -397,6 +397,27 @@ export default function ScanPage() {
                 placeholder={"https://company-a.co.jp\nhttps://company-b.co.jp\nhttps://company-c.co.jp"}
                 rows={8} disabled={isScanning}
                 style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12, resize: "vertical" }} />
+              {/* Auto-generate email toggle */}
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Mail size={13} color="var(--ink3)" />
+                  <span style={{ fontSize: 12, color: "var(--ink2)", fontWeight: 500 }}>Auto-generate email after each scan</span>
+                </div>
+                <button
+                  onClick={() => settings.setField("autoGenerateEmail", !settings.autoGenerateEmail)}
+                  disabled={isScanning}
+                  style={{
+                    width: 36, height: 20, borderRadius: 10, border: "none", cursor: isScanning ? "not-allowed" : "pointer",
+                    background: settings.autoGenerateEmail ? "var(--blue)" : "var(--border)",
+                    position: "relative", transition: "background 0.2s", flexShrink: 0,
+                  }}>
+                  <span style={{
+                    position: "absolute", top: 2, left: settings.autoGenerateEmail ? 18 : 2,
+                    width: 16, height: 16, borderRadius: "50%", background: "white",
+                    transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }} />
+                </button>
+              </div>
               <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12, gap: 8 }}>
                 {isScanning
                   ? <button className="btn btn--danger" onClick={cancelAll}><Square size={14} /> Stop Batch</button>

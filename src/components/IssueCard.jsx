@@ -8,10 +8,11 @@ const SEV_META = {
   low:    { label: "Low",    cls: "sev-counts__item--low",    bar: "var(--green)",  glow: "rgba(52,211,153,0.1)" },
 };
 
-export default function IssueCard({ issue, defaultOpen = false, index = 0 }) {
+export default function IssueCard({ issue, defaultOpen = false, index = 0, checked, onCheckedChange }) {
   const [open, setOpen] = useState(defaultOpen);
   const sev  = SEV_META[issue.severity] || SEV_META.low;
   const type = (issue.type || "unknown").replace(/_/g, " ");
+  const hasCheckbox = checked !== undefined && onCheckedChange;
 
   return (
     <motion.div
@@ -43,6 +44,21 @@ export default function IssueCard({ issue, defaultOpen = false, index = 0 }) {
         style={{ cursor: "pointer" }}
         whileTap={{ scale: 0.995 }}
       >
+        {/* Checkbox — shown when email integration is active */}
+        {hasCheckbox && (
+          <div
+            onClick={e => { e.stopPropagation(); onCheckedChange(!checked); }}
+            style={{
+              width: 15, height: 15, borderRadius: 3, flexShrink: 0, cursor: "pointer",
+              border: `2px solid ${checked ? "var(--blue)" : "var(--border2)"}`,
+              background: checked ? "var(--blue)" : "transparent",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.15s",
+            }}>
+            {checked && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+          </div>
+        )}
+
         {/* Coloured severity dot */}
         <motion.div
           animate={issue.severity === "high"
