@@ -36,28 +36,18 @@ export async function capture(url) {
     // Let JS frameworks render
     await page.waitForTimeout(3000);
 
-    // Scroll through the whole page to trigger lazy-loaded sections
-    await page.evaluate(async () => {
-      await new Promise(resolve => {
-        const distance = 400;
-        const delay = 80;
-        const timer = setInterval(() => {
-          window.scrollBy(0, distance);
-          if (window.scrollY + window.innerHeight >= document.body.scrollHeight) {
-            clearInterval(timer);
-            window.scrollTo(0, 0);
-            resolve();
-          }
-        }, delay);
-      });
-    });
-    await page.waitForTimeout(800);
+    // Scroll to bottom and back to trigger lazy-loaded above-fold content, then return to top
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(500);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
 
-    // Full-page screenshot — captures everything below the fold
+    // Cap at 1280x3000 — avoids Anthropic's 8000px image limit on tall pages.
+    // Above-the-fold + first few sections is enough for a meaningful audit.
     const screenshotBuffer = await page.screenshot({
-      fullPage: true,
+      clip: { x: 0, y: 0, width: 1280, height: 3000 },
       type: "jpeg",
-      quality: 45,       // slightly lower quality to keep base64 size manageable
+      quality: 55,
       animations: "disabled",
     });
 

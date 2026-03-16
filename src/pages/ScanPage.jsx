@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Search, Layers, List, Play, Square, AlertCircle } from "lucide-react";
+import { Search, Layers, List, Play, Square, AlertCircle, Mail } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useScanStore } from "../stores/scanStore";
 import { useEmailStore } from "../stores/emailStore";
@@ -21,6 +21,7 @@ export default function ScanPage() {
   const store = useScanStore();
   const settings = useSettingsStore();
   const agentStore = useAgentStore();
+  const emailStore = useEmailStore();
 
   const activeTaskIds = useRef(new Set());
   const abortRef = useRef(null);
@@ -29,7 +30,7 @@ export default function ScanPage() {
   const [localUrl, setLocalUrl] = useState("");
   const [batchText, setBatchText] = useState("");
   const [localScanning, setLocalScanning] = useState(false);
-  const [historyBanner, setHistoryBanner] = useState(null); // { score, title, scanned_at, email }
+  const [historyBanner, setHistoryBanner] = useState(null);
 
   const isScanning = store.status === "scanning" || localScanning;
 
@@ -45,6 +46,44 @@ export default function ScanPage() {
       screenshot_service_url: settings.screenshotServiceUrl,
       max_deep_pages: settings.maxDeepPages,
     };
+  }
+
+  function getEmailAISettings() {
+    const provider = settings.emailAiProvider || settings.aiProvider;
+    return {
+      ai_provider:       provider,
+      ollama_base_url:   settings.ollamaBaseUrl,
+      ollama_model:      provider === "ollama" ? (settings.emailOllamaModel || settings.ollamaModel) : settings.ollamaModel,
+      openai_api_key:    settings.openaiApiKey,
+      openai_model:      provider === "openai" ? (settings.emailOpenaiModel || settings.openaiModel) : settings.openaiModel,
+      anthropic_api_key: settings.anthropicApiKey,
+      anthropic_model:   provider === "claude" ? (settings.emailAnthropicModel || settings.anthropicModel) : settings.anthropicModel,
+      your_name:    settings.yourName,
+      your_title:   settings.yourTitle,
+      your_email:   settings.yourEmail,
+      your_website: settings.yourWebsite,
+    };
+  }
+
+  // After a scan completes, optionally extract found emails + auto-generate email
+  function handleScanResult(url, result) {
+    // Auto-populate recipient if emails were found in the page HTML,
+    // otherwise fall back to info@<domain>
+    const existing = emailStore.getEmail(url);
+    if (!existing?.recipientEmail) {
+      let recipient = result.emails_found?.[0];
+      if (!recipient) {
+        try {
+          const domain = new URL(url).hostname.replace(/^www\./, "");
+          recipient = `info@${domain}`;
+        } catch {}
+      }
+      if (recipient) emailStore.setRecipient(url, recipient);
+    }
+    // Auto-generate email draft if toggle is on
+    if (settings.autoGenerateEmail) {
+      emailStore.generate(url, result, getEmailAISettings());
+    }
   }
 
   async function cancelAll() {
@@ -93,6 +132,7 @@ export default function ScanPage() {
         `shallow ${url}`
       );
       store.finishShallow(runId, result);
+      handleScanResult(url, result);
     } catch (e) {
       if (e.message === "cancelled" || e.name === "AbortError") { store.cancelScan(); }
       else { store.setScanError(`Failed after ${MAX_RETRIES} attempts: ${e.message}`); }
@@ -178,6 +218,7 @@ export default function ScanPage() {
           `batch ${url}`
         );
         store.addBatchResult(runId, { url, result });
+        handleScanResult(url, result);
         consecutiveFails = 0;
       } catch (e) {
         if (e.message === "cancelled" || e.name === "AbortError") break;
@@ -280,6 +321,27 @@ export default function ScanPage() {
                   : <button className="btn btn--primary" onClick={handleRun} disabled={!localUrl.trim() || isScanning}>
                       <Play size={14} /> Scan
                     </button>}
+              </div>
+              {/* Auto-generate email toggle */}
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Mail size={13} color="var(--ink3)" />
+                  <span style={{ fontSize: 12, color: "var(--ink2)", fontWeight: 500 }}>Auto-generate email after scan</span>
+                </div>
+                <button
+                  onClick={() => settings.setField("autoGenerateEmail", !settings.autoGenerateEmail)}
+                  disabled={isScanning}
+                  style={{
+                    width: 36, height: 20, borderRadius: 10, border: "none", cursor: isScanning ? "not-allowed" : "pointer",
+                    background: settings.autoGenerateEmail ? "var(--blue)" : "var(--border)",
+                    position: "relative", transition: "background 0.2s", flexShrink: 0,
+                  }}>
+                  <span style={{
+                    position: "absolute", top: 2, left: settings.autoGenerateEmail ? 18 : 2,
+                    width: 16, height: 16, borderRadius: "50%", background: "white",
+                    transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }} />
+                </button>
               </div>
             </div>
           </div>

@@ -6,6 +6,7 @@ Run with: python -m uvicorn main:app --reload --port 8000
 import asyncio
 import json
 import os
+import re
 import smtplib
 import ssl
 import traceback
@@ -21,6 +22,34 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+# ── Email extraction ──────────────────────────────────────────────────────────
+_EMAIL_RE = re.compile(
+    r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}',
+    re.IGNORECASE,
+)
+# Domains we never want to surface (tracking pixels, CDNs, common false positives)
+_EMAIL_BLOCKLIST = {
+    "example.com", "example.jp", "sentry.io", "cloudflare.com",
+    "googleapis.com", "gstatic.com", "w3.org", "schema.org",
+    "openstreetmap.org", "gravatar.com", "placeholder.com",
+}
+
+def extract_emails_from_html(html: str) -> list[str]:
+    """Return deduplicated list of likely contact emails found in raw HTML."""
+    found = {}
+    for m in _EMAIL_RE.finditer(html):
+        addr = m.group(0).lower().rstrip(".")
+        domain = addr.split("@")[-1]
+        if domain in _EMAIL_BLOCKLIST:
+            continue
+        # Prefer addresses that look like contact/info/hello/support over generic
+        priority = 0 if re.search(r'^(info|contact|hello|support|sales|enqui)', addr) else 1
+        if addr not in found or priority < found[addr]:
+            found[addr] = priority
+    # Sort: priority addresses first, then alphabetical
+    return sorted(found.keys(), key=lambda a: (found[a], a))
+
 
 app = FastAPI(title="Prism Audit API", version="0.4.0")
 
@@ -148,7 +177,7 @@ class SendEmailSettings(BaseModel):
     gmail_address: str
     gmail_app_password: str
     your_name: str = "Marcin Zielinski"
-    from_address: str = ""
+    from_address: str = ""  # visible From address, e.g. zielinski.marcin@shinrai.pro
 
 
 class SendEmailRequest(BaseModel):
@@ -821,6 +850,8 @@ async def _do_analyze(req: AnalyzeRequest, cancel_event: asyncio.Event | None = 
     data["url"] = req.url
     data["scan_mode"] = req.scan_mode
     data["_tokens"] = usage
+    data["emails_found"] = extract_emails_from_html(html)
+    print(f"[analyze]   emails found: {data['emails_found']}")
     counts = data["issueCounts"]
     # Use AI-reported totalIssues if present, fall back to counting what was returned
     if "totalIssues" not in data:

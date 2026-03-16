@@ -36,6 +36,7 @@ export const useSettingsStore = create(
       gmailAddress: "",
       gmailAppPassword: "",
       fromAddress: "zielinski.marcin@shinrai.pro",
+      autoGenerateEmail: false,
 
       // Dual model: separate model for email writing
       emailAiProvider:     "ollama",   // provider for email generation
