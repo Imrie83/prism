@@ -38,6 +38,7 @@ export const useSettingsStore = create(
       fromAddress: "zielinski.marcin@shinrai.pro",
       autoGenerateEmail: false,
       historyPerPage: 15,
+      visionMode: false,
 
       // Dual model: separate model for email writing
       emailAiProvider:     "ollama",   // provider for email generation

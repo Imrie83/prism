@@ -55,6 +55,7 @@ export async function capture(url) {
 
     // Cap at 1280x7999 — just under Anthropic's 8000px image limit.
     // Full scroll above ensures lazy-loaded content is rendered before capture.
+    const pageHeight = await page.evaluate(() => document.body.scrollHeight);
     const screenshotBuffer = await page.screenshot({
       clip: { x: 0, y: 0, width: 1280, height: 7999 },
       type: "jpeg",
@@ -67,10 +68,10 @@ export async function capture(url) {
     const title = await page.title();
     const finalUrl = page.url();
 
-    console.log(`[capture] full-page screenshot: ${Math.round(screenshotBuffer.length / 1024)}KB base64=${Math.round(screenshot.length / 1024)}KB`);
+    console.log(`[capture] screenshot: ${Math.round(screenshotBuffer.length / 1024)}KB base64=${Math.round(screenshot.length / 1024)}KB pageHeight=${pageHeight}px`);
 
     await context.close();
-    return { screenshot, html, title, finalUrl };
+    return { screenshot, html, title, finalUrl, pageHeight };
 
   } finally {
     await browser.close();

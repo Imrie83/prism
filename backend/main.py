@@ -147,6 +147,7 @@ class AnalyzeRequest(BaseModel):
     settings: AISettings
     task_id: str | None = None   # client-provided ID for cancellation
     scan_mode: str = "shallow"   # "shallow" | "deep" | "batch"
+    vision_mode: bool = False    # True = skip HTML extraction, use up to 2 screenshots
 
 
 class CrawlRequest(BaseModel):
@@ -201,94 +202,6 @@ class AgentChatRequest(BaseModel):
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
-VISION_SYSTEM_PROMPT = """You are an expert English localisation, UX, and cross-cultural web auditor specialising in Japanese websites targeting Western audiences.
-
-You receive BOTH a screenshot of the page AND its structured semantic content. Use both together.
-
-IMPORTANT — LOGOS & BRAND MARKS: Do NOT flag logos, brand marks, or favicon images for containing Japanese text. Logos are intentional brand assets and should be ignored entirely when assessing translation issues.
-
-Analyse across these dimensions:
-
-TEXT & TRANSLATION
-- untranslated_japanese: Japanese text that should be in English (EXCLUDE logos and brand marks)
-- untranslated_image_text: Text embedded in images that is in Japanese (EXCLUDE logos and brand marks)
-- machine_translation: Stilted, unnatural, or clearly auto-translated English
-- grammar_error: Grammatical or spelling mistakes in English content
-- awkward_phrasing: Technically correct but unnatural-sounding English
-- missing_context: Content that makes no sense without Japanese cultural knowledge
-- cultural_mismatch: Concepts, idioms, or references that don't resonate with Westerners
-- weak_cta: Vague, indirect, or missing calls-to-action (Japanese indirectness doesn't work well in English)
-
-VISUAL & LAYOUT (analyse these from the screenshot carefully)
-- visual_hierarchy: Poor use of size, weight, colour to guide the eye — Western readers expect clear F-pattern or Z-pattern flow
-- poor_contrast: Text or UI elements that are hard to read due to insufficient contrast (check against WCAG 2.1 AA)
-- cluttered_layout: Dense, information-overloaded layouts that overwhelm Western visitors used to whitespace
-- colour_psychology: Colour choices that send unintended signals to Western audiences (e.g. white for mourning in Japan vs West)
-- missing_cta_visual: No visually prominent button or action area above the fold
-- broken_layout: Elements that overlap, overflow, or misalign
-- small_text: Body text below 14px or headings that don't stand out
-- inconsistent_style: Mixed font families, inconsistent spacing, mismatched visual components
-- japanese_font_romaji: Latin text rendered in a Japanese font that looks wrong/cramped
-- image_quality: Low-res, pixelated, or stock-photo-heavy imagery that reduces trust
-- western_ux_patterns: Missing patterns Westerners expect (hamburger menu, breadcrumbs, footer nav, social proof)
-- trust_signals: Missing trust indicators (testimonials, certifications, contact info prominently placed)
-
-JAPANESE WEB UX PATTERNS — pay special attention to these common issues that Western users find off-putting:
-- Marquee/ticker text scrolling across the screen
-- Excessive use of blinking or animated elements
-- Font sizes that vary wildly across a single page
-- Overuse of underlines on non-link text
-- Multiple competing banner ads or announcement bars stacked at the top
-- Tab-heavy navigation with 10+ items in the main nav
-- Walls of small-print text with no visual breathing room
-- Popup or overlay abuse on page load
-- Mobile viewport not configured (zoomed-out desktop layout on mobile)
-
-SCORING — be realistic and granular. Use the FULL 0–100 range:
-- 85–100: Near-perfect English readiness. Very minor polish only.
-- 70–84: Good foundation. A few notable issues but generally accessible to Westerners.
-- 50–69: Moderate issues. Western visitors will notice problems. Some friction.
-- 30–49: Significant issues. Core content is hard to navigate or understand.
-- 0–29: Major overhaul needed. Barely accessible to English-speaking audiences.
-Most real Japanese business sites score between 25–65. Do NOT cluster scores around 50–60. Be honest — if the site is poor, score it in the 20s or 30s. If it genuinely impresses, score it in the 80s.
-
-SEVERITY BALANCE — you MUST include a mix of severities:
-- High: 2–4 issues maximum. Reserve for genuinely blocking problems.
-- Medium: 2–4 issues.
-- Low: AT LEAST 1 low-severity issue. Low issues are real but minor — small polish items, subtle UX improvements, nice-to-haves.
-Never return all high or all medium. Every audit must have at least one low.
-
-VARIETY — spread issues across TEXT, VISUAL, and UX categories. Do not return 5+ issues all of the same type. Actively look for Japanese-specific UX anti-patterns (listed above) even on otherwise decent sites.
-
-For EACH issue found, provide:
-- type: one of the types above
-- severity: "high" | "medium" | "low"
-- location: brief description of WHERE on the page (e.g. "hero section", "navigation bar", "footer")
-- original: the exact text or describe the visual element (if applicable)
-- suggestion: specific, actionable fix
-- explanation: brief reason this issue matters for the target audience
-
-Count ALL issues you find across the page. Then return full detail for the 8 most impactful only (highest severity first, variety across text/visual/UX — include at least one low). Report the real total count separately.
-
-Keep field values concise — location (≤8 words), original (≤15 words), suggestion (≤20 words), explanation (≤20 words).
-
-LANGUAGE INSTRUCTIONS — follow exactly:
-{language_instruction}
-
-Return JSON only — no markdown, no code fences, no explanation before or after.
-CRITICAL: All string values must be valid JSON. If you need to reference UI text that contains
-double-quote characters, use single quotes instead (e.g. use 'notice' section, not "notice" section).
-Never place a bare double-quote inside a JSON string value.
-
-{{
-  "score": <0-100, higher = better English-readiness for Western audiences>,
-  "summary": "{summary_instruction}",
-  "title": "<detected page title or company name>",
-  "totalIssues": <integer — total count of ALL issues found across the entire page>,
-  "issues": [top 8 issues with full detail, at least one must be low severity],
-  "issueCounts": {{ "high": N, "medium": N, "low": N }}
-}}"""
-
 AGENT_SYSTEM = """You are an expert English localization and UX analyst for Japanese websites.
 You have access to a detailed scan report. Answer questions about the findings, explain issues,
 prioritise fixes, and suggest implementation approaches. Be specific and actionable.
@@ -341,15 +254,15 @@ Return JSON only — no markdown, no explanation:
 
 # ── AI helpers ────────────────────────────────────────────────────────────────
 
-async def call_ollama(prompt: str, system: str, base_url: str, model: str, image_b64: str | None = None) -> tuple[str, dict]:
+async def call_ollama(prompt: str, system: str, base_url: str, model: str, images: list[str] | None = None) -> tuple[str, dict]:
     user_msg: dict = {"role": "user", "content": prompt}
-    if image_b64:
-        user_msg["images"] = [image_b64]
+    if images:
+        user_msg["images"] = images  # Ollama supports multiple images natively
 
     url = f"{base_url.rstrip('/')}/api/chat"
     prompt_tokens = (len(system) + len(prompt)) // 4  # rough estimate before call
     print(f"[ollama] ▶ POST {url}")
-    print(f"[ollama]   model={model} | has_image={image_b64 is not None} | prompt_chars={len(system)+len(prompt)} (~{prompt_tokens} tokens)")
+    print(f"[ollama]   model={model} | images={len(images) if images else 0} | prompt_chars={len(system)+len(prompt)} (~{prompt_tokens} tokens)")
 
     async with httpx.AsyncClient(timeout=None) as client:
         r = await client.post(url, json={
@@ -396,12 +309,12 @@ async def call_ollama_chat(messages: list, base_url: str, model: str) -> str:
         return reply
 
 
-async def call_openai(prompt: str, system: str, api_key: str, model: str, image_b64: str | None = None) -> tuple[str, dict]:
+async def call_openai(prompt: str, system: str, api_key: str, model: str, images: list[str] | None = None) -> tuple[str, dict]:
     content: list = []
-    if image_b64:
-        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
+    for img in (images or []):
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}})
     content.append({"type": "text", "text": prompt})
-    print(f"[openai] ▶ POST chat/completions model={model} | has_image={image_b64 is not None} | prompt_chars={len(system)+len(prompt)}")
+    print(f"[openai] ▶ POST chat/completions model={model} | images={len(images) if images else 0} | prompt_chars={len(system)+len(prompt)}")
     async with httpx.AsyncClient(timeout=None) as client:
         r = await client.post(
             "https://api.openai.com/v1/chat/completions",
@@ -426,14 +339,13 @@ async def call_openai(prompt: str, system: str, api_key: str, model: str, image_
         return reply, usage
 
 
-async def call_claude(prompt: str, system: str, api_key: str, model: str, image_b64: str | None = None) -> tuple[str, dict]:
+async def call_claude(prompt: str, system: str, api_key: str, model: str, images: list[str] | None = None) -> tuple[str, dict]:
     content: list = []
-    if image_b64:
-        # Strip data URI prefix if present (e.g. "data:image/jpeg;base64,")
-        clean_b64 = image_b64
-        if "," in image_b64[:50]:
-            clean_b64 = image_b64.split(",", 1)[1]
-        # Detect actual format from first bytes
+    for img in (images or []):
+        # Strip data URI prefix if present
+        clean_b64 = img
+        if "," in img[:50]:
+            clean_b64 = img.split(",", 1)[1]
         import base64 as _b64
         try:
             header = _b64.b64decode(clean_b64[:20])
@@ -442,7 +354,7 @@ async def call_claude(prompt: str, system: str, api_key: str, model: str, image_
             media_type = "image/jpeg"
         content.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": clean_b64}})
     content.append({"type": "text", "text": prompt})
-    print(f"[claude] ▶ POST messages model={model} | has_image={image_b64 is not None} | prompt_chars={len(system)+len(prompt)}")
+    print(f"[claude] ▶ POST messages model={model} | images={len(images) if images else 0} | prompt_chars={len(system)+len(prompt)}")
     async with httpx.AsyncClient(timeout=None) as client:
         r = await client.post(
             "https://api.anthropic.com/v1/messages",
@@ -454,9 +366,9 @@ async def call_claude(prompt: str, system: str, api_key: str, model: str, image_
             try: err_body = r.json()
             except: err_body = r.text[:500]
             print(f"[claude] ✗ {r.status_code} error body: {err_body}")
-            # If image is causing issues, retry without it
-            if r.status_code == 400 and image_b64 and "image" in str(err_body).lower():
-                print("[claude] ⚠ Retrying without image due to 400 error")
+            # If images are causing issues, retry without them
+            if r.status_code == 400 and images and "image" in str(err_body).lower():
+                print("[claude] ⚠ Retrying without images due to 400 error")
                 content_no_img = [c for c in content if c.get("type") != "image"]
                 r2 = await client.post(
                     "https://api.anthropic.com/v1/messages",
@@ -542,14 +454,14 @@ def _repair_json(raw: str) -> str:
     return '\n'.join(out)
 
 
-async def call_ai(prompt: str, system: str, settings: AISettings, image_b64: str | None = None) -> dict:
+async def call_ai(prompt: str, system: str, settings: AISettings, images: list[str] | None = None) -> dict:
     """Returns parsed JSON dict from AI. Includes '_usage' key with token counts."""
     if settings.ai_provider == "openai":
-        raw, usage = await call_openai(prompt, system, settings.openai_api_key, settings.openai_model, image_b64)
+        raw, usage = await call_openai(prompt, system, settings.openai_api_key, settings.openai_model, images)
     elif settings.ai_provider == "claude":
-        raw, usage = await call_claude(prompt, system, settings.anthropic_api_key, settings.anthropic_model, image_b64)
+        raw, usage = await call_claude(prompt, system, settings.anthropic_api_key, settings.anthropic_model, images)
     else:
-        raw, usage = await call_ollama(prompt, system, settings.ollama_base_url, settings.ollama_model, image_b64)
+        raw, usage = await call_ollama(prompt, system, settings.ollama_base_url, settings.ollama_model, images)
 
     # Check for truncation before even trying to parse
     if usage.get("stop_reason") == "max_tokens":
@@ -585,14 +497,31 @@ async def call_ai(prompt: str, system: str, settings: AISettings, image_b64: str
 
 # ── Screenshot ────────────────────────────────────────────────────────────────
 
-async def take_screenshot(url: str, service_url: str) -> tuple[str, str]:
+async def take_screenshot(url: str, service_url: str) -> tuple[str, str, int]:
+    """Returns (screenshot_b64, html, page_height)."""
     print(f"[screenshot] capturing {url}")
     async with httpx.AsyncClient(timeout=60.0) as client:
         r = await client.post(f"{service_url.rstrip('/')}/screenshot", json={"url": url})
         r.raise_for_status()
         data = r.json()
-        print(f"[screenshot] done, html={len(data.get('html', ''))} chars")
-        return data["screenshot"], data.get("html", "")
+        page_height = data.get("pageHeight", 0)
+        print(f"[screenshot] done, html={len(data.get('html', ''))} chars pageHeight={page_height}px")
+        return data["screenshot"], data.get("html", ""), page_height
+
+
+async def take_screenshot_offset(url: str, service_url: str, offset_y: int) -> str | None:
+    """Returns second screenshot b64 (or None if page not tall enough)."""
+    print(f"[screenshot-offset] capturing {url} from y={offset_y}")
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(f"{service_url.rstrip('/')}/screenshot-offset", json={"url": url, "offset_y": offset_y})
+        r.raise_for_status()
+        data = r.json()
+        shot = data.get("screenshot")
+        if shot:
+            print(f"[screenshot-offset] done, clipHeight={data.get('clipHeight')}px")
+        else:
+            print(f"[screenshot-offset] page not tall enough, skipping")
+        return shot
 
 
 def extract_semantic_groups(html: str) -> str:
@@ -695,10 +624,187 @@ def extract_semantic_groups(html: str) -> str:
     return result
 
 
-def build_user_prompt(html: str) -> str:
+
+
+
+# ── Prompt Builder ────────────────────────────────────────────────────────────
+
+class PromptBuilder:
+    """Assembles a prompt from named blocks in insertion order.
+    Blocks can be set/replaced individually — shared text lives once,
+    only variable sections are swapped per call.
+    """
+    def __init__(self):
+        self._blocks: dict[str, str] = {}
+        self._order: list[str] = []
+
+    def set(self, name: str, text: str) -> "PromptBuilder":
+        if name not in self._blocks:
+            self._order.append(name)
+        self._blocks[name] = text
+        return self
+
+    def build(self, **kwargs) -> str:
+        """Join all blocks and optionally format with kwargs."""
+        text = "\n\n".join(self._blocks[k] for k in self._order if self._blocks[k])
+        return text.format(**kwargs) if kwargs else text
+
+
+# ── Prompt blocks (shared across modes) ──────────────────────────────────────
+
+_AUDIT_ROLE = (
+    "You are an expert English localisation, UX, and cross-cultural web auditor "
+    "specialising in Japanese websites targeting Western audiences."
+)
+
+_AUDIT_LOGO_NOTE = (
+    "IMPORTANT — LOGOS & BRAND MARKS: Do NOT flag logos, brand marks, or favicon images "
+    "for containing Japanese text. Logos are intentional brand assets and should be ignored "
+    "entirely when assessing translation issues."
+)
+
+_AUDIT_DIMENSIONS = """\
+Analyse across these dimensions:
+
+TEXT & TRANSLATION
+- untranslated_japanese: Japanese text that should be in English (EXCLUDE logos and brand marks)
+- untranslated_image_text: Text embedded in images that is in Japanese (EXCLUDE logos and brand marks)
+- machine_translation: Stilted, unnatural, or clearly auto-translated English
+- grammar_error: Grammatical or spelling mistakes in English content
+- awkward_phrasing: Technically correct but unnatural-sounding English
+- missing_context: Content that makes no sense without Japanese cultural knowledge
+- cultural_mismatch: Concepts, idioms, or references that don't resonate with Westerners
+- weak_cta: Vague, indirect, or missing calls-to-action (Japanese indirectness doesn't work well in English)
+
+VISUAL & LAYOUT (analyse these from the screenshot carefully)
+- visual_hierarchy: Poor use of size, weight, colour to guide the eye — Western readers expect clear F-pattern or Z-pattern flow
+- poor_contrast: Text or UI elements that are hard to read due to insufficient contrast (check against WCAG 2.1 AA)
+- cluttered_layout: Dense, information-overloaded layouts that overwhelm Western visitors used to whitespace
+- colour_psychology: Colour choices that send unintended signals to Western audiences (e.g. white for mourning in Japan vs West)
+- missing_cta_visual: No visually prominent button or action area above the fold
+- broken_layout: Elements that overlap, overflow, or misalign
+- small_text: Body text below 14px or headings that don't stand out
+- inconsistent_style: Mixed font families, inconsistent spacing, mismatched visual components
+- japanese_font_romaji: Latin text rendered in a Japanese font that looks wrong/cramped
+- image_quality: Low-res, pixelated, or stock-photo-heavy imagery that reduces trust
+- western_ux_patterns: Missing patterns Westerners expect (hamburger menu, breadcrumbs, footer nav, social proof)
+- trust_signals: Missing trust indicators (testimonials, certifications, contact info prominently placed)
+
+JAPANESE WEB UX PATTERNS — pay special attention to these common issues that Western users find off-putting:
+- Marquee/ticker text scrolling across the screen
+- Excessive use of blinking or animated elements
+- Font sizes that vary wildly across a single page
+- Overuse of underlines on non-link text
+- Multiple competing banner ads or announcement bars stacked at the top
+- Tab-heavy navigation with 10+ items in the main nav
+- Walls of small-print text with no visual breathing room
+- Popup or overlay abuse on page load
+- Mobile viewport not configured (zoomed-out desktop layout on mobile)"""
+
+_AUDIT_SCORING = """\
+SCORING — be realistic and granular. Use the FULL 0–100 range:
+- 85–100: Near-perfect English readiness. Very minor polish only.
+- 70–84: Good foundation. A few notable issues but generally accessible to Westerners.
+- 50–69: Moderate issues. Western visitors will notice problems. Some friction.
+- 30–49: Significant issues. Core content is hard to navigate or understand.
+- 0–29: Major overhaul needed. Barely accessible to English-speaking audiences.
+Most real Japanese business sites score between 25–65. Do NOT cluster scores around 50–60. Be honest — if the site is poor, score it in the 20s or 30s. If it genuinely impresses, score it in the 80s.
+
+SEVERITY BALANCE — you MUST include a mix of severities:
+- High: 2–4 issues maximum. Reserve for genuinely blocking problems.
+- Medium: 2–4 issues.
+- Low: AT LEAST 1 low-severity issue. Low issues are real but minor — small polish items, subtle UX improvements, nice-to-haves.
+Never return all high or all medium. Every audit must have at least one low.
+
+VARIETY — spread issues across TEXT, VISUAL, and UX categories. Do not return 5+ issues all of the same type. Actively look for Japanese-specific UX anti-patterns (listed above) even on otherwise decent sites."""
+
+_AUDIT_ISSUE_FORMAT = """\
+For EACH issue found, provide:
+- type: one of the types above
+- severity: "high" | "medium" | "low"
+- location: brief description of WHERE on the page (e.g. "hero section", "navigation bar", "footer")
+- original: the exact text or describe the visual element (if applicable)
+- suggestion: specific, actionable fix
+- explanation: brief reason this issue matters for the target audience
+
+Count ALL issues you find across the page. Then return full detail for the 8 most impactful only (highest severity first, variety across text/visual/UX — include at least one low). Report the real total count separately.
+
+Keep field values concise — location (≤8 words), original (≤15 words), suggestion (≤20 words), explanation (≤20 words)."""
+
+_AUDIT_JSON_OUTPUT = """\
+Return JSON only — no markdown, no code fences, no explanation before or after.
+CRITICAL: All string values must be valid JSON. If you need to reference UI text that contains
+double-quote characters, use single quotes instead (e.g. use 'notice' section, not "notice" section).
+Never place a bare double-quote inside a JSON string value.
+
+{{
+  "score": <0-100, higher = better English-readiness for Western audiences>,
+  "summary": "{summary_instruction}",
+  "title": "<detected page title or company name>",
+  "totalIssues": <integer — total count of ALL issues found across the entire page>,
+  "issues": [top 8 issues with full detail, at least one must be low severity],
+  "issueCounts": {{ "high": N, "medium": N, "low": N }}
+}}"""
+
+# Mode-specific input framing blocks
+_INPUT_FRAMING_STANDARD = (
+    "You receive BOTH a screenshot of the page AND its structured semantic content extracted from the HTML. "
+    "Use both together — the semantic content for text accuracy, the screenshot for visual and layout issues."
+)
+
+_INPUT_FRAMING_VISION = (
+    "You receive one or two screenshots covering the full page height. "
+    "Work entirely from the visual evidence — read all text, assess layout, identify UI elements, "
+    "and flag issues directly from what you see. "
+    "If two screenshots are provided, the second continues from where the first ends (scroll position ~8000px). "
+    "Treat both as a single continuous page."
+)
+
+def build_audit_system_prompt(
+    *,
+    vision_mode: bool,
+    scan_mode: str,  # "shallow" | "batch" | "deep"
+) -> str:
+    """Build the audit system prompt from shared blocks + mode-specific pieces."""
+
+    if scan_mode == "deep":
+        summary_instruction = (
+            "2 sentence candid internal assessment — be specific and direct about the main issues found"
+        )
+        language_instruction = (
+            "Write all text fields (summary, location, explanation, suggestion, original) in English."
+        )
+    else:
+        summary_instruction = (
+            "2 sentence opportunity-framed summary in Japanese — highlight what the site does well and what "
+            "English-speaking visitors could gain; focus on potential, never mention problems or failures"
+        )
+        language_instruction = (
+            "Write the summary field in Japanese. "
+            "Write the explanation field in Japanese — this text appears in the client-facing report card shown to the Japanese business owner. "
+            "Write location, original, and suggestion in English (internal use only). "
+            "Do NOT write explanation in English under any circumstances."
+        )
+
+    builder = PromptBuilder()
+    builder.set("role",         _AUDIT_ROLE)
+    builder.set("input_framing", _INPUT_FRAMING_VISION if vision_mode else _INPUT_FRAMING_STANDARD)
+    builder.set("logo_note",    _AUDIT_LOGO_NOTE)
+    builder.set("dimensions",   _AUDIT_DIMENSIONS)
+    builder.set("scoring",      _AUDIT_SCORING)
+    builder.set("issue_format", _AUDIT_ISSUE_FORMAT)
+    builder.set("language",     f"LANGUAGE INSTRUCTIONS — follow exactly:\n{language_instruction}")
+    builder.set("json_output",  _AUDIT_JSON_OUTPUT)
+
+    return builder.build(summary_instruction=summary_instruction)
+
+
+def build_audit_user_prompt(html: str, vision_mode: bool) -> str:
+    """Build the user-turn prompt. Vision mode skips HTML semantic extract."""
+    if vision_mode:
+        return "Analyse this Japanese company website from the screenshot(s) provided."
     semantic = extract_semantic_groups(html)
     return f"Analyse this Japanese company website. Semantic page structure:\n\n{semantic}"
-
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -835,7 +941,8 @@ async def list_tasks():
 async def _do_analyze(req: AnalyzeRequest, cancel_event: asyncio.Event | None = None) -> dict:
     import time
     t0 = time.monotonic()
-    print(f"[analyze] ═══ START url={req.url}")
+    vision = req.vision_mode
+    print(f"[analyze] ═══ START url={req.url} mode={'vision' if vision else 'standard'}")
     print(f"[analyze]   provider={req.settings.ai_provider} model={req.settings.ollama_model or req.settings.openai_model or req.settings.anthropic_model}")
 
     if cancel_event and cancel_event.is_set():
@@ -843,39 +950,35 @@ async def _do_analyze(req: AnalyzeRequest, cancel_event: asyncio.Event | None = 
 
     print(f"[analyze]   → taking screenshot...")
     t1 = time.monotonic()
-    screenshot_b64, html = await take_screenshot(req.url, req.settings.screenshot_service_url)
-    print(f"[analyze]   ✓ screenshot done in {time.monotonic()-t1:.1f}s | html={len(html)} chars | image={len(screenshot_b64)//1024}KB")
+    screenshot_b64, html, page_height = await take_screenshot(req.url, req.settings.screenshot_service_url)
+    print(f"[analyze]   ✓ screenshot done in {time.monotonic()-t1:.1f}s | html={len(html)} chars | image={len(screenshot_b64)//1024}KB | pageHeight={page_height}px")
+
+    # Vision mode: take a second screenshot if the page is taller than 7999px
+    images: list[str] = [screenshot_b64]
+    if vision and page_height > 7999:
+        print(f"[analyze]   → page tall ({page_height}px), taking second screenshot from y=7999...")
+        t1b = time.monotonic()
+        screenshot2 = await take_screenshot_offset(req.url, req.settings.screenshot_service_url, 7999)
+        if screenshot2:
+            images.append(screenshot2)
+            print(f"[analyze]   ✓ second screenshot done in {time.monotonic()-t1b:.1f}s | {len(screenshot2)//1024}KB")
+    elif not vision:
+        # Standard mode sends only one image
+        images = [screenshot_b64]
 
     if cancel_event and cancel_event.is_set():
         raise asyncio.CancelledError()
 
-    prompt = build_user_prompt(html)
-    print(f"[analyze]   → calling AI | prompt={len(prompt)} chars | system={len(VISION_SYSTEM_PROMPT)} chars")
+    # Build prompt and system using prompt builder
+    system_prompt = build_audit_system_prompt(vision_mode=vision, scan_mode=req.scan_mode)
+    prompt = build_audit_user_prompt(html, vision_mode=vision)
+
+    # Email extraction always runs on HTML regardless of mode
+    emails_found = extract_emails_from_html(html)
+
+    print(f"[analyze]   → calling AI | mode={'vision' if vision else 'standard'} | images={len(images)} | prompt={len(prompt)} chars | system={len(system_prompt)} chars")
     t2 = time.monotonic()
-    if req.scan_mode == "deep":
-        summary_instruction = (
-            "2 sentence candid internal assessment — be specific and direct about the main issues found"
-        )
-        language_instruction = (
-            "Write all text fields (summary, location, explanation, suggestion, original) in English."
-        )
-    else:
-        # shallow / batch — summary and issues go into the report card sent to the Japanese client
-        summary_instruction = (
-            "2 sentence opportunity-framed summary in Japanese — highlight what the site does well and what "
-            "English-speaking visitors could gain; focus on potential, never mention problems or failures"
-        )
-        language_instruction = (
-            "Write the summary field in Japanese. "
-            "Write the explanation field in Japanese — this text appears in the client-facing report card shown to the Japanese business owner. "
-            "Write location, original, and suggestion in English (internal use only). "
-            "Do NOT write explanation in English under any circumstances."
-        )
-    system_prompt = VISION_SYSTEM_PROMPT.format(
-        summary_instruction=summary_instruction,
-        language_instruction=language_instruction,
-    )
-    data = await call_ai(prompt, system_prompt, req.settings, screenshot_b64)
+    data = await call_ai(prompt, system_prompt, req.settings, images)
     usage = data.pop("_usage", {})
     print(f"[analyze]   ✓ AI done in {time.monotonic()-t2:.1f}s | score={data.get('score')} issues={len(data.get('issues',[]))}")
 
@@ -891,8 +994,8 @@ async def _do_analyze(req: AnalyzeRequest, cancel_event: asyncio.Event | None = 
     data["url"] = req.url
     data["scan_mode"] = req.scan_mode
     data["_tokens"] = usage
-    data["emails_found"] = extract_emails_from_html(html)
-    print(f"[analyze]   emails found: {data['emails_found']}")
+    data["emails_found"] = emails_found
+    print(f"[analyze]   emails found: {emails_found}")
     counts = data["issueCounts"]
     # Use AI-reported totalIssues if present, fall back to counting what was returned
     if "totalIssues" not in data:
@@ -1279,7 +1382,7 @@ async def _do_generate_email(prompt: str, system: str, ai_settings: AISettings,
     import time
     t0 = time.monotonic()
     print(f"[generate-email]   → calling AI provider={ai_settings.ai_provider}")
-    data = await call_ai(prompt, system, ai_settings, image_b64=None)
+    data = await call_ai(prompt, system, ai_settings, images=None)
     usage = data.pop("_usage", {})
     subject     = data.get("subject", "")
     jp_paras    = data.get("jp_paragraphs", [])

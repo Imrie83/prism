@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Search, Layers, List, Play, Square, AlertCircle, Mail } from "lucide-react";
+import { Search, Layers, List, Play, Square, AlertCircle, Mail, Eye } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useScanStore } from "../stores/scanStore";
 import { useEmailStore } from "../stores/emailStore";
@@ -131,7 +131,7 @@ export default function ScanPage() {
     const runId = store.startShallow(url);
     try {
       const result = await withRetry(
-        () => api.analyzePage(url, getSettings(), taskId, abortRef.current.signal, "shallow"),
+        () => api.analyzePage(url, getSettings(), taskId, abortRef.current.signal, "shallow", settings.visionMode),
         `shallow ${url}`
       );
       store.finishShallow(runId, result);
@@ -356,27 +356,58 @@ export default function ScanPage() {
                       <Play size={14} /> Scan
                     </button>}
               </div>
-              {/* Auto-generate email toggle */}
-              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Mail size={13} color="var(--ink3)" />
-                  <span style={{ fontSize: 12, color: "var(--ink2)", fontWeight: 500 }}>Auto-generate email after scan</span>
-                </div>
-                <button
-                  onClick={() => settings.setField("autoGenerateEmail", !settings.autoGenerateEmail)}
-                  disabled={isScanning}
-                  style={{
-                    width: 36, height: 20, borderRadius: 10, border: "none", cursor: isScanning ? "not-allowed" : "pointer",
-                    background: settings.autoGenerateEmail ? "var(--blue)" : "var(--border)",
-                    position: "relative", transition: "background 0.2s", flexShrink: 0,
-                  }}>
-                  <span style={{
-                    position: "absolute", top: 2, left: settings.autoGenerateEmail ? 18 : 2,
-                    width: 16, height: 16, borderRadius: "50%", background: "white",
-                    transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                  }} />
-                </button>
-              </div>
+              {/* Toggles — only shown for single/shallow mode */}
+              {store.activeMode === "shallow" && (
+                <>
+                  {/* Auto-generate email toggle */}
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Mail size={13} color="var(--ink3)" />
+                      <span style={{ fontSize: 12, color: "var(--ink2)", fontWeight: 500 }}>Auto-generate email after scan</span>
+                    </div>
+                    <button
+                      onClick={() => settings.setField("autoGenerateEmail", !settings.autoGenerateEmail)}
+                      disabled={isScanning}
+                      style={{
+                        width: 36, height: 20, borderRadius: 10, border: "none", cursor: isScanning ? "not-allowed" : "pointer",
+                        background: settings.autoGenerateEmail ? "var(--blue)" : "var(--border)",
+                        position: "relative", transition: "background 0.2s", flexShrink: 0,
+                      }}>
+                      <span style={{
+                        position: "absolute", top: 2, left: settings.autoGenerateEmail ? 18 : 2,
+                        width: 16, height: 16, borderRadius: "50%", background: "white",
+                        transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                      }} />
+                    </button>
+                  </div>
+                  {/* Vision-only mode toggle */}
+                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Eye size={13} color="var(--ink3)" />
+                      <div>
+                        <span style={{ fontSize: 12, color: "var(--ink2)", fontWeight: 500 }}>Vision-only mode</span>
+                        <span style={{ fontSize: 10, color: "var(--ink3)", marginLeft: 6 }}>
+                          {settings.visionMode ? "screenshots only — no HTML" : "screenshot + HTML extract"}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => settings.setField("visionMode", !settings.visionMode)}
+                      disabled={isScanning}
+                      style={{
+                        width: 36, height: 20, borderRadius: 10, border: "none", cursor: isScanning ? "not-allowed" : "pointer",
+                        background: settings.visionMode ? "var(--blue)" : "var(--border)",
+                        position: "relative", transition: "background 0.2s", flexShrink: 0,
+                      }}>
+                      <span style={{
+                        position: "absolute", top: 2, left: settings.visionMode ? 18 : 2,
+                        width: 16, height: 16, borderRadius: "50%", background: "white",
+                        transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                      }} />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

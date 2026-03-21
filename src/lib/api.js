@@ -56,8 +56,8 @@ async function postStreamLast(path, body, signal) {
 
 export const api = {
   // taskId is a unique string — backend registers it for cancellation
-  async analyzePage(url, settings, taskId, signal, scanMode = "shallow") {
-    return postStreamLast("/analyze", { url, settings, task_id: taskId, scan_mode: scanMode }, signal);
+  async analyzePage(url, settings, taskId, signal, scanMode = "shallow", visionMode = false) {
+    return postStreamLast("/analyze", { url, settings, task_id: taskId, scan_mode: scanMode, vision_mode: visionMode }, signal);
   },
 
   // Tell the backend to cancel a running task immediately
