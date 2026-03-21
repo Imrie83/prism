@@ -21,10 +21,11 @@ export default function ScreenshotLightbox({ src, url, onClose }) {
           onClick={onClose}
           style={{
             position: "fixed", inset: 0, zIndex: 200,
-            background: "rgba(0,0,0,0.85)",
+            background: "rgba(0,0,0,0.88)",
             backdropFilter: "blur(8px)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            padding: 32,
+            display: "flex", alignItems: "flex-start", justifyContent: "center",
+            padding: "48px 32px 32px",
+            overflowY: "auto",
           }}
         >
           <motion.div
@@ -35,11 +36,11 @@ export default function ScreenshotLightbox({ src, url, onClose }) {
             onClick={e => e.stopPropagation()}
             style={{
               position: "relative",
-              maxWidth: "90vw",
-              maxHeight: "88vh",
+              width: "min(90vw, 1280px)",
               borderRadius: 12,
               overflow: "hidden",
               boxShadow: "0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(77,184,255,0.2)",
+              flexShrink: 0,
             }}
           >
             <img
@@ -47,17 +48,16 @@ export default function ScreenshotLightbox({ src, url, onClose }) {
               alt="Page screenshot"
               style={{
                 display: "block",
-                maxWidth: "90vw",
-                maxHeight: "88vh",
-                objectFit: "contain",
+                width: "100%",
+                height: "auto",
               }}
             />
 
             {/* Top bar */}
             <div style={{
-              position: "absolute", top: 0, left: 0, right: 0,
+              position: "sticky", top: 0, left: 0, right: 0,
               padding: "10px 14px",
-              background: "linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%)",
+              background: "linear-gradient(180deg, rgba(0,0,0,0.75) 0%, transparent 100%)",
               display: "flex", alignItems: "center", gap: 10,
             }}>
               {url && (
@@ -69,7 +69,7 @@ export default function ScreenshotLightbox({ src, url, onClose }) {
                 </a>
               )}
               <button onClick={onClose}
-                style={{ background:"rgba(255,255,255,0.1)", border:"none", borderRadius:6,
+                style={{ background:"rgba(255,255,255,0.15)", border:"none", borderRadius:6,
                   padding:"5px 8px", cursor:"pointer", color:"#fff", display:"flex" }}>
                 <X size={15} />
               </button>
@@ -82,7 +82,7 @@ export default function ScreenshotLightbox({ src, url, onClose }) {
               background: "linear-gradient(0deg, rgba(0,0,0,0.6) 0%, transparent 100%)",
               fontSize: 11, color: "rgba(255,255,255,0.45)", textAlign: "center",
             }}>
-              Click outside or press Esc to close
+              Scroll to see full page · Click outside or press Esc to close
             </div>
           </motion.div>
         </motion.div>

@@ -6,9 +6,10 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useScanStore } from "../stores/scanStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import { useEmailStore } from "../stores/emailStore";
 
-const PER_PAGE = 15;
+const PAGE_SIZE_OPTIONS = [15, 20, 30, 50, 100];
 
 function fmt(iso) {
   if (!iso) return "—";
@@ -52,6 +53,9 @@ export default function HistoryPage() {
   const [records, setRecords] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const { historyPerPage, setField } = useSettingsStore();
+  const perPage = historyPerPage;
+  const setPerPage = (n) => setField("historyPerPage", n);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deletingUrl, setDeletingUrl] = useState(null);
@@ -65,7 +69,7 @@ export default function HistoryPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getHistory(p, PER_PAGE);
+      const data = await api.getHistory(p, perPage);
       setRecords(data.records);
       setTotal(data.total);
     } catch (e) {
@@ -73,9 +77,9 @@ export default function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, perPage]);
 
-  useEffect(() => { load(page); }, [page]);
+  useEffect(() => { load(page); }, [page, perPage]);
 
   async function handleToggleResponse(url, e) {
     e.stopPropagation();
@@ -149,7 +153,7 @@ export default function HistoryPage() {
     }
   }
 
-  const totalPages = Math.ceil(total / PER_PAGE);
+  const totalPages = Math.ceil(total / perPage);
 
   return (
     <div style={{ padding: "24px 32px", maxWidth: 1100, margin: "0 auto" }}>
@@ -163,9 +167,22 @@ export default function HistoryPage() {
             {total} site{total !== 1 ? "s" : ""} scanned · click a row to reopen full results
           </p>
         </div>
-        <button className="btn btn--ghost btn--sm" onClick={() => load(page)} disabled={loading}>
-          <RefreshCw size={13} className={loading ? "spin" : ""} /> Refresh
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <label style={{ fontSize: 11, color: "var(--ink3)" }}>Show</label>
+          <select
+            value={perPage}
+            onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+            style={{
+              fontSize: 11, padding: "3px 6px", borderRadius: "var(--radius)",
+              border: "1px solid var(--border)", background: "var(--surface)",
+              color: "var(--ink2)", cursor: "pointer",
+            }}>
+            {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <button className="btn btn--ghost btn--sm" onClick={() => load(page)} disabled={loading}>
+            <RefreshCw size={13} className={loading ? "spin" : ""} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Error */}

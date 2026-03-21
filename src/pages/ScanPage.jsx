@@ -67,6 +67,9 @@ export default function ScanPage() {
 
   // After a scan completes, optionally extract found emails + auto-generate email
   function handleScanResult(url, result) {
+    // Skip entirely if the scan returned no usable content
+    if (!result || (result.issues?.length === 0 && result.score == null)) return;
+
     // Auto-populate recipient if emails were found in the page HTML,
     // otherwise fall back to info@<domain>
     const existing = emailStore.getEmail(url);
@@ -198,14 +201,41 @@ export default function ScanPage() {
   }
 
   async function runBatch() {
-    const urls = batchText.split("\n").map(u => u.trim()).filter(Boolean);
-    if (!urls.length || isScanning) return;
+    const rawUrls = batchText.split("\n").map(u => u.trim()).filter(Boolean);
+    if (!rawUrls.length || isScanning) return;
     cancelledRef.current = false;
     setLocalScanning(true);
     agentStore.clearHistory();
     abortRef.current = new AbortController();
+
+    // Silently filter out URLs already in history — no message, just skip
+    let urls = rawUrls;
+    try {
+      const checks = await Promise.all(rawUrls.map(u => api.checkHistory(u).catch(() => ({ exists: false }))));
+      urls = rawUrls.filter((_, i) => !checks[i].exists);
+    } catch {}
+
+    if (!urls.length) {
+      setLocalScanning(false);
+      return;
+    }
+
     const runId = store.startBatch(urls);
     setLocalScanning(false);
+
+    // Email generation queue — drains independently so scanning isn't blocked waiting for AI
+    const emailQueue = [];
+    let emailWorkerRunning = false;
+
+    async function drainEmailQueue() {
+      if (emailWorkerRunning) return;
+      emailWorkerRunning = true;
+      while (emailQueue.length > 0) {
+        const { url, result } = emailQueue.shift();
+        if (!cancelledRef.current) handleScanResult(url, result);
+      }
+      emailWorkerRunning = false;
+    }
 
     let consecutiveFails = 0;
     for (const url of urls) {
@@ -218,7 +248,11 @@ export default function ScanPage() {
           `batch ${url}`
         );
         store.addBatchResult(runId, { url, result });
-        handleScanResult(url, result);
+        // Only queue email if scan returned real content (not an empty/failed load)
+        if (result?.issues?.length > 0 || result?.score != null) {
+          emailQueue.push({ url, result });
+          drainEmailQueue(); // fire-and-forget — next scan starts immediately
+        }
         consecutiveFails = 0;
       } catch (e) {
         if (e.message === "cancelled" || e.name === "AbortError") break;

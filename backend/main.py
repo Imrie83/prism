@@ -310,21 +310,26 @@ GOAL: Get them curious enough to visit {website} or reply.
 TONE: Warm and direct. Sound like a person, not a marketing department.
 No buzzwords: "leverage", "seamlessly", "holistic", "impactful", "unlock potential".
 
+STRUCTURE — follow this arc:
+1. Open with ONE specific genuine observation about the site — the industry, a product, the visual style, or the company's apparent mission. Make it feel researched, not generic.
+2. Briefly introduce who you are and what Shinrai Web does — one natural sentence. e.g. "I'm [name] from Shinrai Web — we help Japanese businesses make their sites feel natural and welcoming to English-speaking visitors."
+3. Connect the opportunity to THEIR specific situation — what kind of international visitors might they attract? What would those visitors gain? Frame as upside, never as criticism.
+4. Reference the audit report with ONE sentence only.
+5. Close with a soft, specific invitation — a question, an offer, or a gentle nudge to visit the site.
+
 VARIATION — every email must feel different. Vary:
-- The opening hook: sometimes lead with a genuine compliment about the design, sometimes the product/service, sometimes the ambition you sense in the site
-- The angle: sometimes focus on the untapped English-speaking audience, sometimes on trust-building, sometimes on the gap between the site's quality and its English presentation
-- The closing: sometimes a soft question, sometimes a direct invitation to visit the site, sometimes a gentle offer to share one specific finding
-- Sentence rhythm: mix short punchy sentences with longer reflective ones. Avoid formulaic paragraph lengths.
+- The opening hook: sometimes lead with the visual design, sometimes the product/service, sometimes the location or audience
+- The angle on opportunity: sometimes untapped international audience, sometimes trust-building, sometimes the gap between quality and English presentation
+- The closing: sometimes a soft question, sometimes a direct invitation, sometimes a specific offer
+- Sentence rhythm: mix short punchy sentences with longer reflective ones
 
 CONTENT RULES:
 - jp_paragraphs: 2-3 short paragraphs in natural Japanese Keigo. Do NOT include 御担当者様 — it is added automatically.
 - en_paragraphs: 2-3 short paragraphs. Do NOT start with "Hi there" or any greeting — it is added automatically.
-- Start with something specific and genuine you noticed about the site — the industry, a product detail, the visual style, or the company's apparent mission
-- Hint at opportunity for English-speaking visitors — never frame as criticism
-- Be specific to THIS site — avoid generic phrases that could apply to any Japanese business
-- Reference the audit report with ONE sentence only
+- Be specific to THIS site — avoid phrases that could apply to any Japanese business
 - Do NOT mention issue counts or specific problem names
 - Do NOT write any HTML — return plain text paragraphs only
+- ALWAYS mention that our core service is English translation and localisation of Japanese website content — this must be clear in both languages
 
 Return JSON only — no markdown, no explanation:
 {{

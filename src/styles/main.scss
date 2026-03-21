@@ -158,6 +158,8 @@ input, textarea, select {
     display: flex;
     flex-direction: column;
     gap: 1px;
+    overflow-y: auto;
+    min-height: 0;
   }
 
   .sidebar__item {
@@ -570,7 +572,7 @@ input, textarea, select {
   overflow: hidden;
   position: relative;
 
-  img { width: 100%; display: block; max-height: 320px; object-fit: cover; object-position: top; }
+  img { width: 100%; display: block; max-height: 480px; object-fit: cover; object-position: top; }
 
   &__label {
     position: absolute;

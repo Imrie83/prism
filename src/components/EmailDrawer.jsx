@@ -176,7 +176,18 @@ export default function EmailDrawer() {
   function generate() {
     if (!drawerUrl || !scanResult) return;
     if (["ready", "error"].includes(emailData?.status)) {
+      // Preserve recipient and send history across regeneration
+      const preserved = {
+        recipientEmail: emailData?.recipientEmail,
+        sentAt: emailData?.sentAt,
+        checkedIssues: emailData?.checkedIssues,
+      };
       store.resetUrl(drawerUrl);
+      if (preserved.recipientEmail || preserved.sentAt) {
+        useEmailStore.setState(s => ({
+          emails: { ...s.emails, [drawerUrl]: { ...(s.emails[drawerUrl] || {}), ...preserved } }
+        }));
+      }
     }
     // Backend generates the report card HTML from scan data — no screenshot needed here
     store.generate(drawerUrl, scanResult, getAISettings());

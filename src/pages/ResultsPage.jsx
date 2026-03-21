@@ -216,6 +216,19 @@ function ShallowView({ onLightbox }) {
   return (
     <>
       <RunPicker runs={shallowHistory} activeId={run.runId} onSelect={setShallowActiveRun} onRemove={removeShallowRun} />
+
+      {/* URL / title header */}
+      {result.url && (
+        <div className="batch-page-header" style={{ marginBottom: 16 }}>
+          <div className="batch-page-header__left">
+            <div className="batch-page-header__title">{result.title || result.url}</div>
+            <a href={result.url} target="_blank" rel="noopener noreferrer" className="batch-page-header__url">
+              {result.url} <ExternalLink size={10} />
+            </a>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--ink2)" }}>
