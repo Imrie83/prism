@@ -667,36 +667,45 @@ _AUDIT_DIMENSIONS = """\
 Analyse across these dimensions:
 
 TEXT & TRANSLATION
-- untranslated_japanese: Japanese text that should be in English (EXCLUDE logos and brand marks)
-- untranslated_image_text: Text embedded in images that is in Japanese (EXCLUDE logos and brand marks)
-- machine_translation: Stilted, unnatural, or clearly auto-translated English
+- untranslated_nav_ui: Japanese text in navigation, buttons, labels, or UI controls — critical because users can't navigate
+- untranslated_body: Japanese text in body copy, descriptions, or headings — important but less blocking than nav
+- untranslated_image_text: Text embedded in images or banners in Japanese (EXCLUDE logos and brand marks)
+- machine_translation: Stilted, unnatural, or clearly auto-translated English — reads like it was run through Google Translate
 - grammar_error: Grammatical or spelling mistakes in English content
-- awkward_phrasing: Technically correct but unnatural-sounding English
+- awkward_phrasing: Technically correct but unnatural-sounding English — a native speaker wouldn't say it this way
 - missing_context: Content that makes no sense without Japanese cultural knowledge
-- cultural_mismatch: Concepts, idioms, or references that don't resonate with Westerners
-- weak_cta: Vague, indirect, or missing calls-to-action (Japanese indirectness doesn't work well in English)
+- cultural_mismatch: Concepts, idioms, seasonal references, or customs that don't resonate with Western audiences
+- weak_cta: Vague, indirect, or missing calls-to-action — Japanese indirectness ("Please feel free to contact us if you wish") doesn't work in English
+- date_number_format: Japanese-style dates (令和6年, 2024年3月), phone numbers without international prefix (+81), or currency without context
 
-VISUAL & LAYOUT (analyse these from the screenshot carefully)
+VISUAL & LAYOUT (analyse from the screenshot carefully)
 - visual_hierarchy: Poor use of size, weight, colour to guide the eye — Western readers expect clear F-pattern or Z-pattern flow
-- poor_contrast: Text or UI elements that are hard to read due to insufficient contrast (check against WCAG 2.1 AA)
+- poor_contrast: Text or UI elements hard to read due to insufficient contrast (WCAG 2.1 AA)
 - cluttered_layout: Dense, information-overloaded layouts that overwhelm Western visitors used to whitespace
-- colour_psychology: Colour choices that send unintended signals to Western audiences (e.g. white for mourning in Japan vs West)
+- colour_psychology: Colour choices that send unintended signals to Western audiences
 - missing_cta_visual: No visually prominent button or action area above the fold
 - broken_layout: Elements that overlap, overflow, or misalign
 - small_text: Body text below 14px or headings that don't stand out
 - inconsistent_style: Mixed font families, inconsistent spacing, mismatched visual components
-- japanese_font_romaji: Latin text rendered in a Japanese font that looks wrong/cramped
-- image_quality: Low-res, pixelated, or stock-photo-heavy imagery that reduces trust
-- western_ux_patterns: Missing patterns Westerners expect (hamburger menu, breadcrumbs, footer nav, social proof)
-- trust_signals: Missing trust indicators (testimonials, certifications, contact info prominently placed)
+- japanese_font_romaji: Latin text rendered in a Japanese font — looks wrong/cramped to Western eyes
+- image_quality: Low-res, pixelated, or generic stock-photo-heavy imagery that reduces trust
+- mobile_usability: Non-responsive layout, tiny tap targets, text too small on mobile viewports
 
-JAPANESE WEB UX PATTERNS — pay special attention to these common issues that Western users find off-putting:
+UX PATTERNS
+- navigation_ux: Navigation issues Westerners find confusing — too many items (10+), no hamburger on mobile, unclear active states, missing breadcrumbs
+- social_proof: Missing trust indicators — no testimonials, reviews, client logos, case studies, or certifications visible
+- contact_accessibility: Contact information hard to find, no prominent phone/email, no English contact form, requires Japanese to reach out
+- form_ux: Forms with Japanese-specific fields (furigana/reading, hanko), confusing field order, or no English labels
+- pdf_heavy: Key content buried in downloadable PDFs instead of web pages — Westerners expect HTML content
+- trust_signals: Missing credibility markers — no SSL indicator, no company registration number, no physical address, looks anonymous
+
+JAPANESE WEB UX ANTI-PATTERNS (flag these specifically — Western users find them off-putting):
 - Marquee/ticker text scrolling across the screen
-- Excessive use of blinking or animated elements
-- Font sizes that vary wildly across a single page
+- Excessive blinking or animated elements
+- Font sizes varying wildly across a single page
 - Overuse of underlines on non-link text
-- Multiple competing banner ads or announcement bars stacked at the top
-- Tab-heavy navigation with 10+ items in the main nav
+- Multiple competing announcement bars stacked at the top
+- Tab-heavy navigation with 10+ main nav items
 - Walls of small-print text with no visual breathing room
 - Popup or overlay abuse on page load
 - Mobile viewport not configured (zoomed-out desktop layout on mobile)"""
@@ -720,14 +729,21 @@ VARIETY — spread issues across TEXT, VISUAL, and UX categories. Do not return 
 
 _AUDIT_ISSUE_FORMAT = """\
 For EACH issue found, provide:
-- type: one of the types above
+- type: one of the types listed above (use exact snake_case name)
 - severity: "high" | "medium" | "low"
 - location: brief description of WHERE on the page (e.g. "hero section", "navigation bar", "footer")
 - original: the exact text or describe the visual element (if applicable)
 - suggestion: specific, actionable fix
 - explanation: brief reason this issue matters for the target audience
 
-Count ALL issues you find across the page. Then return full detail for the 8 most impactful only (highest severity first, variety across text/visual/UX — include at least one low). Report the real total count separately.
+Severity guidance by category:
+- untranslated_nav_ui, missing_cta_visual, broken_layout → usually high
+- untranslated_body, machine_translation, weak_cta, navigation_ux → usually medium
+- grammar_error, awkward_phrasing, date_number_format, form_ux, pdf_heavy → usually low-medium
+- visual_hierarchy, poor_contrast, cluttered_layout → severity depends on how bad it is
+- social_proof, contact_accessibility, trust_signals → medium unless completely absent (high)
+
+Count ALL issues you find across the page. Then return full detail for the 8 most impactful only (highest severity first, variety across TEXT/VISUAL/UX — include at least one low). Report the real total count separately.
 
 Keep field values concise — location (≤8 words), original (≤15 words), suggestion (≤20 words), explanation (≤20 words)."""
 
@@ -1240,9 +1256,21 @@ def _build_report_card_html(scan: dict) -> str:
     else:             score_color = "#dc2626"
 
     # Pick up to 5 issues: first pass gets one per category (variety), fill remaining by severity
-    TEXT_TYPES   = {"untranslated_japanese","machine_translation","grammar_error","awkward_phrasing","missing_context","cultural_mismatch","weak_cta"}
-    VISUAL_TYPES = {"visual_hierarchy","cluttered_layout","poor_contrast","broken_layout","small_text","inconsistent_style","colour_psychology","image_quality","japanese_font_romaji"}
-    UX_TYPES     = {"missing_cta_visual","western_ux_patterns","trust_signals","untranslated_image_text"}
+    TEXT_TYPES   = {
+        "untranslated_nav_ui", "untranslated_body", "untranslated_japanese",
+        "machine_translation", "grammar_error", "awkward_phrasing",
+        "missing_context", "cultural_mismatch", "weak_cta", "date_number_format",
+        "untranslated_image_text",
+    }
+    VISUAL_TYPES = {
+        "visual_hierarchy", "cluttered_layout", "poor_contrast", "broken_layout",
+        "small_text", "inconsistent_style", "colour_psychology", "image_quality",
+        "japanese_font_romaji", "missing_cta_visual", "mobile_usability",
+    }
+    UX_TYPES     = {
+        "navigation_ux", "social_proof", "contact_accessibility",
+        "form_ux", "pdf_heavy", "trust_signals", "western_ux_patterns",
+    }
 
     picked = []
     for category in (TEXT_TYPES, VISUAL_TYPES, UX_TYPES):
@@ -1264,7 +1292,10 @@ def _build_report_card_html(scan: dict) -> str:
 
     # Japanese translations for issue types
     JP_TYPE = {
-        "untranslated_japanese":  "未翻訳テキスト",
+        # Text & Translation
+        "untranslated_nav_ui":    "未翻訳ナビ・UI",
+        "untranslated_body":      "未翻訳本文",
+        "untranslated_japanese":  "未翻訳テキスト",       # legacy compat
         "untranslated_image_text":"画像内の未翻訳テキスト",
         "machine_translation":    "機械翻訳の問題",
         "grammar_error":          "文法エラー",
@@ -1272,6 +1303,8 @@ def _build_report_card_html(scan: dict) -> str:
         "missing_context":        "文脈の欠如",
         "cultural_mismatch":      "文化的ミスマッチ",
         "weak_cta":               "弱いCTA",
+        "date_number_format":     "日付・数字の形式",
+        # Visual & Layout
         "visual_hierarchy":       "視覚的階層の問題",
         "poor_contrast":          "コントラスト不足",
         "cluttered_layout":       "レイアウトの混雑",
@@ -1282,8 +1315,16 @@ def _build_report_card_html(scan: dict) -> str:
         "inconsistent_style":     "スタイルの不統一",
         "japanese_font_romaji":   "日本語フォントの問題",
         "image_quality":          "画像品質の問題",
-        "western_ux_patterns":    "欧米UXパターンの欠如",
+        "mobile_usability":       "モバイル対応の問題",
+        # UX Patterns
+        "navigation_ux":          "ナビゲーションの問題",
+        "social_proof":           "社会的証明の欠如",
+        "contact_accessibility":  "連絡先のアクセス性",
+        "form_ux":                "フォームのUX問題",
+        "pdf_heavy":              "PDF依存の問題",
         "trust_signals":          "信頼シグナルの欠如",
+        # Legacy compat
+        "western_ux_patterns":    "欧米UXパターンの欠如",
     }
     JP_SEV = {"high": "重要", "medium": "中程度", "low": "軽微"}
     SEV_COLOR = {"high": "#dc2626", "medium": "#d97706", "low": "#16a34a"}
@@ -1556,15 +1597,47 @@ async def send_email(req: SendEmailRequest):
 # ── History endpoints ────────────────────────────────────────────────────────
 
 @app.get("/api/history")
-async def get_history(page: int = 1, per_page: int = 20):
-    """Paginated list of all scan records (summary fields only, no screenshot)."""
+async def get_history(
+    page: int = 1,
+    per_page: int = 20,
+    sort_by: str = "scanned_at",
+    sort_dir: str = "desc",
+    filter_email: str = "all",
+    filter_score_min: int = 0,
+    filter_score_max: int = 100,
+):
+    """Paginated, sortable, filterable list of all scan records (no screenshot)."""
     all_records = db.all()
-    # Sort by scanned_at descending
-    all_records.sort(key=lambda r: r.get("scanned_at", ""), reverse=True)
+
+    # ── Filter ───────────────────────────────────────────────────────────────
+    if filter_email == "sent":
+        all_records = [r for r in all_records if r.get("email", {}).get("sent_at")]
+    elif filter_email == "not_sent":
+        all_records = [r for r in all_records if not r.get("email", {}).get("sent_at")]
+    elif filter_email == "got_response":
+        all_records = [r for r in all_records if r.get("email", {}).get("got_response")]
+
+    if filter_score_min > 0 or filter_score_max < 100:
+        all_records = [
+            r for r in all_records
+            if filter_score_min <= (r.get("score") or 0) <= filter_score_max
+        ]
+
+    # ── Sort ─────────────────────────────────────────────────────────────────
+    reverse = sort_dir == "desc"
+    if sort_by == "score":
+        all_records.sort(key=lambda r: r.get("score") or 0, reverse=reverse)
+    elif sort_by == "total_issues":
+        all_records.sort(key=lambda r: r.get("total_issues") or 0, reverse=reverse)
+    elif sort_by == "email_sent":
+        all_records.sort(key=lambda r: r.get("email", {}).get("sent_at") or "", reverse=reverse)
+    else:
+        all_records.sort(key=lambda r: r.get("scanned_at", ""), reverse=reverse)
+
     total = len(all_records)
     start = (page - 1) * per_page
     page_records = all_records[start:start + per_page]
-    # Strip screenshot from list view
+
     slim = []
     for r in page_records:
         slim.append({

@@ -39,6 +39,11 @@ export const useSettingsStore = create(
       autoGenerateEmail: false,
       historyPerPage: 15,
       visionMode: false,
+      historySortBy: "scanned_at",
+      historySortDir: "desc",
+      historyFilterEmail: "all",
+      historyFilterScoreMin: 0,
+      historyFilterScoreMax: 100,
 
       // Dual model: separate model for email writing
       emailAiProvider:     "ollama",   // provider for email generation

@@ -90,8 +90,15 @@ export const api = {
   },
 
   // ── History ───────────────────────────────────────────────────────────────
-  async getHistory(page = 1, perPage = 20) {
-    const res = await fetch(`${BASE}/history?page=${page}&per_page=${perPage}`);
+  async getHistory(page = 1, perPage = 20, sortBy = "scanned_at", sortDir = "desc", filterEmail = "all", filterScoreMin = 0, filterScoreMax = 100) {
+    const params = new URLSearchParams({
+      page, per_page: perPage,
+      sort_by: sortBy, sort_dir: sortDir,
+      filter_email: filterEmail,
+      filter_score_min: filterScoreMin,
+      filter_score_max: filterScoreMax,
+    });
+    const res = await fetch(`${BASE}/history?${params}`);
     return res.json();
   },
 
