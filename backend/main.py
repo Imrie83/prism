@@ -265,37 +265,53 @@ SENDER
   Website: {website}
   Company: Shinrai Web (信頼ウェブ)
 
-GOAL: Get them curious enough to visit {website} or reply.
+SERVICES WE OFFER (mention these naturally — not all, pick the most relevant to this site):
+  - English translation and localisation of Japanese website content
+  - English copywriting that sounds natural to Western readers (not machine-translated)
+  - Full web development and redesign — we can build or rebuild the site, not just translate it
+  - UX improvements for international visitors (navigation, trust signals, contact forms)
+  - Ongoing content updates and maintenance in English
 
-TONE: Warm and direct. Sound like a person, not a marketing department.
-No buzzwords: "leverage", "seamlessly", "holistic", "impactful", "unlock potential".
+GOAL: A reply or a visit to {website}. Nothing more — do not oversell.
 
-STRUCTURE — follow this arc:
-1. Open with ONE specific genuine observation about the site — the industry, a product, the visual style, or the company's apparent mission. Make it feel researched, not generic.
-2. Briefly introduce who you are and what Shinrai Web does — one natural sentence. e.g. "I'm [name] from Shinrai Web — we help Japanese businesses make their sites feel natural and welcoming to English-speaking visitors."
-3. Connect the opportunity to THEIR specific situation — what kind of international visitors might they attract? What would those visitors gain? Frame as upside, never as criticism.
-4. Reference the audit report with ONE sentence only.
-5. Close with a soft, specific invitation — a question, an offer, or a gentle nudge to visit the site.
+CULTURAL APPROACH — critical for Japanese business cold email:
+- Open formally: "Dear [business name] team" style, never "Hi there"
+- Establish WHO you are BEFORE making any observations about their site
+- Show respect for their time explicitly (e.g. "I will keep this brief")
+- Be specific and concrete — vague compliments and vague offers are ignored
+- Japanese business culture values precision and evidence over enthusiasm
+- The compliment must be GENUINE and SPECIFIC, drawn from the audit data — not generic flattery
+- Never sound presumptuous — frame everything as an offer, not a diagnosis
+- The Japanese section should mirror the English section in content, written in natural business Keigo
 
-VARIATION — every email must feel different. Vary:
-- The opening hook: sometimes lead with the visual design, sometimes the product/service, sometimes the location or audience
-- The angle on opportunity: sometimes untapped international audience, sometimes trust-building, sometimes the gap between quality and English presentation
-- The closing: sometimes a soft question, sometimes a direct invitation, sometimes a specific offer
-- Sentence rhythm: mix short punchy sentences with longer reflective ones
+STRUCTURE — follow this arc precisely:
+1. Formal opening: brief self-introduction (who you are, company name, one-line description of what you do)
+2. Acknowledge their time: one short sentence showing you respect that this is unsolicited
+3. One SPECIFIC genuine compliment about their site — drawn from what you know about it (visual quality, the uniqueness of their offering, clear specialist expertise, good photography, interesting product range etc). This must feel earned and real, not formulaic.
+4. ONE specific concrete observation: what a typical international visitor currently cannot do or find on the site — frame as a missed opportunity, never as a failure
+5. Mention that we offer both localisation AND full web development — so we can handle whatever level of help they need, from translating existing content to building something new
+6. Reference the personalised report in ONE sentence: what it contains and where to find it
+7. Single clear ask: one specific question or invitation — make it easy to say yes
+
+VARIATION — every email must feel different. Do NOT use the same sentence structure twice. Vary:
+- The compliment angle: sometimes the product/service itself, sometimes the visual design, sometimes the specialist depth, sometimes the clear local identity
+- The missed opportunity framing: sometimes international bookings, sometimes research-phase travellers, sometimes expat communities, sometimes global niche audiences
+- The services mentioned: choose 2-3 most relevant, not always the same ones
+- The closing ask: sometimes "would you be open to a quick look?", sometimes "I'd be happy to answer any questions", sometimes a direct invitation
 
 CONTENT RULES:
-- jp_paragraphs: 2-3 short paragraphs in natural Japanese Keigo. Do NOT include 御担当者様 — it is added automatically.
-- en_paragraphs: 2-3 short paragraphs. Do NOT start with "Hi there" or any greeting — it is added automatically.
-- Be specific to THIS site — avoid phrases that could apply to any Japanese business
-- Do NOT mention issue counts or specific problem names
+- jp_paragraphs: 3-4 short paragraphs in natural Japanese business Keigo. Do NOT include 御担当者様 — it is added automatically. Match the structure above.
+- en_paragraphs: 3-4 short paragraphs. Do NOT include any greeting line — it is added automatically.
+- Be specific to THIS site and THIS business — every sentence should feel like it could only have been written about them
+- Do NOT mention issue counts, scores, or specific technical problem names
 - Do NOT write any HTML — return plain text paragraphs only
-- ALWAYS mention that our core service is English translation and localisation of Japanese website content — this must be clear in both languages
+- Keep it SHORT — busy owners won't read more than 150 words in English. Every sentence must earn its place.
 
 Return JSON only — no markdown, no explanation:
 {{
-  "subject": "<Japanese subject line — specific to their site, genuine curiosity>",
-  "jp_paragraphs": ["<paragraph 1 in Japanese>", "<paragraph 2>", "<paragraph 3>"],
-  "en_paragraphs": ["<paragraph 1 in English>", "<paragraph 2>", "<paragraph 3>"]
+  "subject": "<Japanese subject line — specific, genuine, makes them want to open it>",
+  "jp_paragraphs": ["<paragraph 1>", "<paragraph 2>", "<paragraph 3>", "<paragraph 4 if needed>"],
+  "en_paragraphs": ["<paragraph 1>", "<paragraph 2>", "<paragraph 3>", "<paragraph 4 if needed>"]
 }}"""
 
 
@@ -1182,27 +1198,87 @@ async def generate_email(req: GenerateEmailRequest):
 
     total_issues = scan.get("totalIssues", len(issues))
 
-    prompt = f"""Write a bilingual marketing outreach email for this Japanese company.
+    # Build specific positive observations from scan data for the compliment
+    # Look at what's GOOD — low-severity issues imply the rest is decent,
+    # and the summary itself usually mentions what the site does well
+    severity_counts = {}
+    for issue in issues:
+        sev = issue.get("severity", "medium")
+        severity_counts[sev] = severity_counts.get(sev, 0) + 1
 
-SITE DETAILS (use these to make the email feel personal and researched):
+    # Extract positive signals: if few high-severity issues, the site has real strengths
+    high_count   = severity_counts.get("high", 0)
+    medium_count = severity_counts.get("medium", 0)
+    low_count    = severity_counts.get("low", 0)
+    total_issues = scan.get("totalIssues", len(issues))
+
+    # Infer genuine positives from what ISN'T broken
+    positives = []
+    issue_types = {i.get("type", "") for i in issues}
+    if "broken_layout" not in issue_types and "poor_contrast" not in issue_types:
+        positives.append("clean, well-structured visual layout")
+    if "image_quality" not in issue_types:
+        positives.append("good quality photography or imagery")
+    if "cluttered_layout" not in issue_types:
+        positives.append("good use of whitespace and clear organisation")
+    if "visual_hierarchy" not in issue_types:
+        positives.append("clear visual hierarchy and readable structure")
+    if high_count == 0:
+        positives.append("solid technical foundation with no critical issues")
+    if score and int(score) >= 60:
+        positives.append("site that already shows real care and attention")
+
+    positives_text = ", ".join(positives[:2]) if positives else "a site that clearly reflects genuine expertise in its field"
+
+    # Build opportunity hints (framed as upside, not problems)
+    opportunity_hints = []
+    for issue in issues[:8]:
+        loc   = issue.get("location", "")
+        itype = issue.get("type", "")
+        if itype in ("untranslated_nav_ui", "untranslated_body", "untranslated_japanese") and loc:
+            opportunity_hints.append(f"making navigation and key content accessible to English readers (currently Japanese-only in the {loc})")
+        elif itype in ("machine_translation", "grammar_error", "awkward_phrasing") and loc:
+            opportunity_hints.append(f"replacing stilted auto-translated text with natural English that builds trust")
+        elif itype in ("weak_cta", "missing_cta_visual") and loc:
+            opportunity_hints.append(f"adding a clear English call-to-action so international visitors know how to book or contact")
+        elif itype in ("trust_signals", "social_proof", "contact_accessibility"):
+            opportunity_hints.append(f"adding English trust signals (reviews, contact info) that Western visitors expect")
+        elif itype in ("mobile_usability", "navigation_ux"):
+            opportunity_hints.append(f"improving the mobile and navigation experience for international visitors")
+        if len(opportunity_hints) >= 2:
+            break
+
+    hints_text = "; and ".join(opportunity_hints[:2]) if opportunity_hints else "making the site fully navigable and readable for English-speaking visitors"
+
+    prompt = f"""Write a bilingual cold outreach email for this Japanese business. Follow your system prompt structure precisely.
+
+SITE DETAILS:
   URL: {url}
   Page title: {title or "unknown"}
   English-readiness score: {score}/100
-  What we analysed: {summary}
+  What the site is about: {summary}
 
-SPECIFIC OPPORTUNITY AREAS to hint at (frame as upside, not problems):
+GENUINE POSITIVES to draw the compliment from (use one of these specifically):
+  {positives_text}
+
+SPECIFIC OPPORTUNITY to mention (frame as upside — what international visitors could gain):
   {hints_text}
 
-IMPORTANT TONE NOTES:
-- Start by mentioning something genuinely positive about the site
-- Naturally pivot to the opportunity for English-speaking visitors
-- ALWAYS mention that our core service is English translation and localisation of Japanese website content — this must be clear in both languages
-- The report card is already embedded — reference it with ONE sentence only
-- Do NOT say the site has problems, bugs, or issues
-- Do NOT list specific findings — hint at opportunity areas only
-- Do NOT mention any issue counts or numbers in the email body
+SERVICES TO REFERENCE (choose the 2 most relevant to this site's situation):
+  - English translation and localisation of Japanese website content
+  - Natural English copywriting (replacing machine-translated text)
+  - Full web development and redesign if they want to go further
+  - UX improvements for international visitors
 
-Return the bilingual email following your system prompt instructions exactly."""
+REMEMBER:
+- Open with a formal self-introduction, not a compliment
+- Acknowledge their time is valuable before making your pitch
+- The compliment must be SPECIFIC to this site, not generic
+- Keep English under 150 words total
+- One clear ask at the end — nothing more
+- The personalised report is available at {req.settings.your_website}
+
+Return the bilingual email as JSON following your system prompt exactly."""
 
     print(f"[generate-email] ═══ START url={url} score={score} provider={ai_settings.ai_provider}")
     print(f"[generate-email]   opportunity hints: {hints_text}")
