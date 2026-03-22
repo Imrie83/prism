@@ -62,15 +62,50 @@ app.add_middleware(
 
 # ── Database ─────────────────────────────────────────────────────────────────
 os.makedirs("/app/data", exist_ok=True)
-db = TinyDB("/app/data/db.json", indent=2, ensure_ascii=False)
-ScanRecord = Query()
+
+# Split storage: metadata (fast, small) and screenshots (large blobs, on-demand)
+scans_db       = TinyDB("/app/data/scans.json",       indent=2, ensure_ascii=False)
+screenshots_db = TinyDB("/app/data/screenshots.json", indent=2, ensure_ascii=False)
+prospects_db   = TinyDB("/app/data/prospects.json",   indent=2, ensure_ascii=False)
+ScanRecord     = Query()
+ProspectRecord = Query()
+
+def _migrate_legacy_db():
+    """One-time migration: split legacy db.json → scans.json + screenshots.json.
+    Runs on startup only if db.json exists and hasn't been migrated yet.
+    """
+    legacy_path = "/app/data/db.json"
+    bak_path    = "/app/data/db.json.bak"
+    if not os.path.exists(legacy_path):
+        return
+    print("[db] legacy db.json found — migrating to scans.json + screenshots.json...")
+    try:
+        legacy = TinyDB(legacy_path, indent=2, ensure_ascii=False)
+        records = legacy.all()
+        migrated = 0
+        for r in records:
+            url = r.get("url", "")
+            if not url:
+                continue
+            screenshot = r.pop("screenshot_b64", "") or ""
+            scans_db.upsert(r, ScanRecord.url == url)
+            if screenshot:
+                screenshots_db.upsert({"url": url, "screenshot_b64": screenshot}, ScanRecord.url == url)
+            migrated += 1
+        legacy.close()
+        os.rename(legacy_path, bak_path)
+        print(f"[db] ✓ migrated {migrated} records — db.json → db.json.bak")
+    except Exception as e:
+        print(f"[db] ⚠ migration failed: {e}")
+
+_migrate_legacy_db()
 
 def db_upsert_scan(data: dict):
-    """Upsert a scan record keyed by url. Preserves existing email block."""
+    """Upsert scan metadata to scans.json, screenshot to screenshots.json."""
     url = data.get("url", "")
     if not url:
         return
-    existing = db.get(ScanRecord.url == url)
+    existing = scans_db.get(ScanRecord.url == url)
     email_block = existing.get("email") if existing else None
     record = {
         "url":          url,
@@ -81,17 +116,19 @@ def db_upsert_scan(data: dict):
         "total_issues": data.get("totalIssues", 0),
         "issue_counts": data.get("issueCounts", {}),
         "issues":       data.get("issues", []),
-        "screenshot_b64": data.get("screenshot", ""),
         "scanned_at":   datetime.now(timezone.utc).isoformat(),
     }
     if email_block:
         record["email"] = email_block
-    db.upsert(record, ScanRecord.url == url)
+    scans_db.upsert(record, ScanRecord.url == url)
+    screenshot = data.get("screenshot", "")
+    if screenshot:
+        screenshots_db.upsert({"url": url, "screenshot_b64": screenshot}, ScanRecord.url == url)
     print(f"[db] upserted scan for {url}")
 
 def db_update_email(url: str, recipient: str, subject: str, html: str):
     """Update the email block for a URL after sending."""
-    existing = db.get(ScanRecord.url == url)
+    existing = scans_db.get(ScanRecord.url == url)
     if not existing:
         print(f"[db] ⚠ no scan record for {url} — email block not saved")
         return
@@ -102,8 +139,18 @@ def db_update_email(url: str, recipient: str, subject: str, html: str):
         "sent_at":      datetime.now(timezone.utc).isoformat(),
         "got_response": existing.get("email", {}).get("got_response", False),
     }
-    db.update({"email": email_block}, ScanRecord.url == url)
+    scans_db.update({"email": email_block}, ScanRecord.url == url)
     print(f"[db] email record saved for {url} → {recipient}")
+
+def db_get_full(url: str) -> dict | None:
+    """Return full scan record with screenshot joined from screenshots.json."""
+    record = scans_db.get(ScanRecord.url == url)
+    if not record:
+        return None
+    shot = screenshots_db.get(ScanRecord.url == url)
+    if shot:
+        record = {**record, "screenshot_b64": shot.get("screenshot_b64", "")}
+    return record
 
 
 # ── Task registry — allows frontend to cancel running AI tasks ────────────────
@@ -1607,7 +1654,7 @@ async def get_history(
     filter_score_max: int = 100,
 ):
     """Paginated, sortable, filterable list of all scan records (no screenshot)."""
-    all_records = db.all()
+    all_records = scans_db.all()
 
     # ── Filter ───────────────────────────────────────────────────────────────
     if filter_email == "sent":
@@ -1660,7 +1707,7 @@ async def get_history(
 @app.get("/api/history/check")
 async def check_history(url: str):
     """Check if a URL has been scanned before. Called before starting a new scan."""
-    record = db.get(ScanRecord.url == url)
+    record = scans_db.get(ScanRecord.url == url)
     if not record:
         return {"exists": False}
     return {
@@ -1679,7 +1726,7 @@ async def check_history(url: str):
 @app.get("/api/history/entry")
 async def get_history_entry(url: str):
     """Full scan record including screenshot — for rehydrating the results page."""
-    record = db.get(ScanRecord.url == url)
+    record = db_get_full(url)
     if not record:
         raise HTTPException(404, "No record found for this URL")
     return record
@@ -1688,19 +1735,20 @@ async def get_history_entry(url: str):
 @app.patch("/api/history/response")
 async def toggle_response(url: str):
     """Toggle got_response flag for a URL's email record."""
-    record = db.get(ScanRecord.url == url)
+    record = scans_db.get(ScanRecord.url == url)
     if not record or not record.get("email"):
         raise HTTPException(404, "No email record found for this URL")
     current = record["email"].get("got_response", False)
     email_block = {**record["email"], "got_response": not current}
-    db.update({"email": email_block}, ScanRecord.url == url)
+    scans_db.update({"email": email_block}, ScanRecord.url == url)
     return {"got_response": not current}
 
 
 @app.delete("/api/history/entry")
 async def delete_history_entry(url: str):
     """Delete a scan record entirely."""
-    removed = db.remove(ScanRecord.url == url)
+    removed = scans_db.remove(ScanRecord.url == url)
+    screenshots_db.remove(ScanRecord.url == url)
     if not removed:
         raise HTTPException(404, "No record found for this URL")
     return {"ok": True}
@@ -1712,7 +1760,7 @@ class SaveEmailDraftRequest(BaseModel):
 @app.post("/api/history/save-email")
 async def save_email_draft(url: str, subject: str, body: SaveEmailDraftRequest):
     """Save a generated (but not yet sent) email draft to the DB record."""
-    record = db.get(ScanRecord.url == url)
+    record = scans_db.get(ScanRecord.url == url)
     if not record:
         raise HTTPException(404, "No scan record for this URL")
     existing_email = record.get("email") or {}
@@ -1722,18 +1770,18 @@ async def save_email_draft(url: str, subject: str, body: SaveEmailDraftRequest):
         "html":    body.html,
         # preserve recipient/sent_at/got_response if they exist
     }
-    db.update({"email": email_block}, ScanRecord.url == url)
+    scans_db.update({"email": email_block}, ScanRecord.url == url)
     return {"ok": True}
 
 
 @app.post("/api/history/update-email-recipient")
 async def update_email_recipient(url: str, recipient: str):
     """Update recipient in DB when user types in email drawer."""
-    record = db.get(ScanRecord.url == url)
+    record = scans_db.get(ScanRecord.url == url)
     if not record:
         return {"ok": False}
     existing_email = record.get("email") or {}
-    db.update({"email": {**existing_email, "recipient": recipient}}, ScanRecord.url == url)
+    scans_db.update({"email": {**existing_email, "recipient": recipient}}, ScanRecord.url == url)
     return {"ok": True}
 
 
@@ -1749,10 +1797,184 @@ async def save_deep_scan(body: dict):
 
 @app.get("/api/history/check")
 async def check_url_in_history(url: str):
-    record = db.get(ScanRecord.url == url)
+    record = scans_db.get(ScanRecord.url == url)
     if not record:
         return {"exists": False}
     return {"exists": True, "record": record}
+
+
+# ── Discover endpoints ────────────────────────────────────────────────────────
+
+class DiscoverSearchRequest(BaseModel):
+    keywords: str
+    location: str = ""
+    limit: int = 120   # 0 = all
+
+
+@app.post("/api/discover/search")
+async def discover_search(req: DiscoverSearchRequest):
+    """Scrape Google Maps — streams NDJSON progress events, final line is the result."""
+    import time, uuid
+
+    session_id = str(uuid.uuid4())[:8]
+    scanned_urls = {r.get("url", "") for r in scans_db.all()}
+    print(f"[discover] session={session_id} keywords={req.keywords!r} location={req.location!r} limit={req.limit}")
+
+    async def stream():
+        saved = []
+        skipped_no_website = 0
+        skipped_already_scanned = 0
+
+        svc_url = os.environ.get("DISCOVER_SERVICE_URL", "http://discover:3001")
+        async with httpx.AsyncClient(timeout=900.0) as client:
+            async with client.stream("POST", f"{svc_url}/discover", json={
+                "keywords": req.keywords,
+                "location": req.location,
+                "limit": req.limit,
+            }) as r:
+                r.raise_for_status()
+                buffer = ""
+                async for chunk in r.aiter_text():
+                    buffer += chunk
+                    lines = buffer.split("\n")
+                    buffer = lines.pop()
+                    for line in lines:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            event = json.loads(line)
+                        except Exception:
+                            continue
+
+                        if event.get("type") == "done":
+                            # Process final businesses list
+                            for biz in event.get("businesses", []):
+                                website = (biz.get("website") or "").strip()
+                                if not website:
+                                    skipped_no_website += 1
+                                    continue
+                                if not website.startswith("http"):
+                                    website = "https://" + website
+                                biz["website"] = website
+                                if website in scanned_urls:
+                                    skipped_already_scanned += 1
+                                    continue
+                                biz["session_id"]    = session_id
+                                biz["keywords"]      = req.keywords
+                                biz["location"]      = req.location
+                                biz["status"]        = "new"
+                                biz["discovered_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                                existing = prospects_db.get(ProspectRecord.website == website)
+                                if not existing:
+                                    prospects_db.insert(biz)
+                                elif existing.get("status") not in ("scanned", "emailed"):
+                                    prospects_db.update(biz, ProspectRecord.website == website)
+                                saved.append(biz)
+
+                            print(f"[discover] saved={len(saved)} skipped_no_site={skipped_no_website} skipped_scanned={skipped_already_scanned}")
+                            result = {
+                                "type": "result",
+                                "session_id": session_id,
+                                "total_found": len(event.get("businesses", [])),
+                                "saved": len(saved),
+                                "skipped_no_website": skipped_no_website,
+                                "skipped_already_scanned": skipped_already_scanned,
+                            }
+                            yield json.dumps(result).encode() + b"\n"
+                        else:
+                            # Forward progress event straight through to frontend
+                            yield json.dumps(event).encode() + b"\n"
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+@app.get("/api/discover/prospects")
+async def get_prospects(
+    session_id: str | None = None,
+    sort_by: str = "discovered_at",
+    sort_dir: str = "desc",
+    filter_status: str = "all",
+    filter_has_email: str = "all",
+):
+    """Return saved prospects, optionally filtered by session."""
+    records = prospects_db.all()
+
+    if session_id:
+        records = [r for r in records if r.get("session_id") == session_id]
+
+    if filter_status != "all":
+        records = [r for r in records if r.get("status") == filter_status]
+
+    if filter_has_email == "yes":
+        records = [r for r in records if r.get("email")]
+    elif filter_has_email == "no":
+        records = [r for r in records if not r.get("email")]
+
+    reverse = sort_dir == "desc"
+    if sort_by == "rating":
+        records.sort(key=lambda r: float(r.get("rating") or 0), reverse=reverse)
+    elif sort_by == "name":
+        records.sort(key=lambda r: r.get("name", ""), reverse=reverse)
+    elif sort_by == "status":
+        records.sort(key=lambda r: r.get("status", ""), reverse=reverse)
+    else:
+        records.sort(key=lambda r: r.get("discovered_at", ""), reverse=reverse)
+
+    return {"records": records, "total": len(records)}
+
+
+@app.get("/api/discover/sessions")
+async def get_sessions():
+    """Return list of discover sessions (unique session_ids with metadata)."""
+    records = prospects_db.all()
+    sessions: dict = {}
+    for r in records:
+        sid = r.get("session_id")
+        if not sid:
+            continue
+        if sid not in sessions:
+            sessions[sid] = {
+                "session_id": sid,
+                "keywords": r.get("keywords", ""),
+                "location": r.get("location", ""),
+                "discovered_at": r.get("discovered_at", ""),
+                "count": 0,
+                "scanned": 0,
+            }
+        sessions[sid]["count"] += 1
+        if r.get("status") in ("scanned", "emailed"):
+            sessions[sid]["scanned"] += 1
+    return {"sessions": sorted(sessions.values(), key=lambda s: s["discovered_at"], reverse=True)}
+
+
+@app.patch("/api/discover/status")
+async def update_prospect_status(body: dict):
+    """Update status of a prospect by website URL."""
+    website = body.get("website")
+    status  = body.get("status")
+    if not website or not status:
+        raise HTTPException(400, "website and status required")
+    prospects_db.update({"status": status}, ProspectRecord.website == website)
+    return {"ok": True}
+
+
+@app.delete("/api/discover/prospect")
+async def delete_prospect(website: str):
+    """Remove a prospect (dismiss)."""
+    prospects_db.remove(ProspectRecord.website == website)
+    return {"ok": True}
+
+
+@app.patch("/api/discover/email")
+async def update_prospect_email(body: dict):
+    """Store discovered/extracted email on a prospect."""
+    website = body.get("website")
+    email   = body.get("email")
+    if not website:
+        raise HTTPException(400, "website required")
+    prospects_db.update({"email": email}, ProspectRecord.website == website)
+    return {"ok": True}
 
 
 @app.post("/api/agent-chat")

@@ -18,11 +18,13 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       - SCREENSHOT_SERVICE_URL=http://screenshot:3000
+      - DISCOVER_SERVICE_URL=http://discover:3001
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     volumes:
       - ./data:/app/data
     depends_on:
       - screenshot
+      - discover
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -34,7 +36,17 @@ services:
     ports:
       - "3000:3000"
     restart: unless-stopped
-    # Playwright needs these for headless Chromium
     shm_size: 2gb
+
+  discover:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.discover
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    shm_size: 2gb
+    environment:
+      - DISCOVER_DEBUG=1
 
 volumes: {}

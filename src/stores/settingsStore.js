@@ -44,6 +44,15 @@ export const useSettingsStore = create(
       historyFilterEmail: "all",
       historyFilterScoreMin: 0,
       historyFilterScoreMax: 100,
+      discoverPerPage: 25,
+      discoverSortBy: "discovered_at",
+      discoverSortDir: "desc",
+      discoverFilterStatus: "all",
+      discoverFilterHasEmail: "all",
+      // Saved searches: [{ id, keywords, location, label? }]
+      savedSearches: [],
+      // Previously used keywords for autocomplete suggestions
+      usedKeywords: [],
 
       // Dual model: separate model for email writing
       emailAiProvider:     "ollama",   // provider for email generation

@@ -10,4 +10,4 @@ __pycache__/
 Thumbs.db
 -e 
 # Local TinyDB
-data/db.json
+data/

@@ -8,6 +8,7 @@ import SettingsModal from "./components/SettingsModal";
 import ScanPage from "./pages/ScanPage";
 import ResultsPage from "./pages/ResultsPage";
 import HistoryPage from "./pages/HistoryPage";
+import DiscoverPage from "./pages/DiscoverPage";
 import { useScanStore } from "./stores/scanStore";
 import { useEmailStore } from "./stores/emailStore";
 import { useAgentStore } from "./stores/agentStore";
@@ -15,9 +16,10 @@ import { useAgentStore } from "./stores/agentStore";
 const VERSION = __APP_VERSION__;
 
 const TAB_TITLES = {
-  scan:    "New Audit",
-  results: "Results",
-  history: "Outreach History",
+  scan:     "New Audit",
+  results:  "Results",
+  history:  "Outreach History",
+  discover: "Discover",
 };
 
 // Read computed CSS clamp value for --email-w
@@ -103,9 +105,10 @@ export default function App() {
             initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.16 }}
             style={{ flex: 1 }}>
-            {activeTab === "scan"    && <ScanPage />}
-            {activeTab === "results" && <ResultsPage />}
-            {activeTab === "history" && <HistoryPage />}
+            {activeTab === "scan"     && <ScanPage />}
+            {activeTab === "results"  && <ResultsPage />}
+            {activeTab === "history"  && <HistoryPage />}
+            {activeTab === "discover" && <DiscoverPage />}
           </motion.div>
         </AnimatePresence>
       </motion.div>

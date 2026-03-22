@@ -138,4 +138,36 @@ export const api = {
   async rebuildCard(scanResult, selectedIndices) {
     return post("/rebuild-card", { scan_result: scanResult, selected_issue_indices: selectedIndices });
   },
+
+  // ── Discover ──────────────────────────────────────────────────────────────
+  async discoverSearch(keywords, location, limit, onProgress) {
+    return new Promise((resolve, reject) => {
+      let result = null;
+      postStream("/discover/search", { keywords, location, limit }, (event) => {
+        if (event.type === "result") { result = event; return; }
+        if (event.type === "error") { reject(new Error(event.error)); return; }
+        if (onProgress) onProgress(event);
+      }).then(() => result ? resolve(result) : reject(new Error("No result received")))
+        .catch(reject);
+    });
+  },
+  async getProspects(sessionId, sortBy = "discovered_at", sortDir = "desc", filterStatus = "all", filterHasEmail = "all") {
+    const params = new URLSearchParams({ sort_by: sortBy, sort_dir: sortDir, filter_status: filterStatus, filter_has_email: filterHasEmail });
+    if (sessionId) params.set("session_id", sessionId);
+    const res = await fetch(`${BASE}/discover/prospects?${params}`);
+    return res.json();
+  },
+  async getSessions() {
+    const res = await fetch(`${BASE}/discover/sessions`);
+    return res.json();
+  },
+  async updateProspectStatus(website, status) {
+    return fetch(`${BASE}/discover/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ website, status }) }).then(r => r.json());
+  },
+  async deleteProspect(website) {
+    return fetch(`${BASE}/discover/prospect?website=${encodeURIComponent(website)}`, { method: "DELETE" }).then(r => r.json());
+  },
+  async updateProspectEmail(website, email) {
+    return fetch(`${BASE}/discover/email`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ website, email }) }).then(r => r.json());
+  },
 };
