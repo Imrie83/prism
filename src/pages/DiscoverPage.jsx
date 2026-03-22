@@ -152,18 +152,7 @@ export default function DiscoverPage() {
   const scanningUrl    = ds.scanningUrl || null;
   const setScanningUrl = (v) => ds.setField("scanningUrl", v);
 
-  function getScanSettings() {
-    return {
-      ai_provider: settings.aiProvider,
-      ollama_base_url: settings.ollamaBaseUrl,
-      ollama_model: settings.ollamaModel,
-      openai_api_key: settings.openaiApiKey,
-      openai_model: settings.openaiModel,
-      anthropic_api_key: settings.anthropicApiKey,
-      anthropic_model: settings.anthropicModel,
-      screenshot_service_url: settings.screenshotServiceUrl,
-    };
-  }
+
 
 
   const loadSessions = useCallback(async () => {
@@ -236,7 +225,7 @@ export default function DiscoverPage() {
     setRecords(rs => rs.map(r => r.website === url ? { ...r, status: "scanning" } : r));
 
     try {
-      const result = await api.analyzePage(url, getScanSettings(), `discover-${Date.now()}`, null, "shallow");
+      const result = await api.analyzePage(url, getScanSettings(), `discover-${Date.now()}`, null, "shallow", settings.visionMode);
 
       // Update prospect with email if found
       const foundEmail = result.emails_found?.[0];

@@ -169,49 +169,44 @@ async function _searchOneMaps({ searchUrl, limit, context, DEBUG, emit, keyword 
       await randSleep(SCROLL_PAUSE_MIN, SCROLL_PAUSE_MAX);
     }
 
-    // Collect all card elements and basic metadata
-    const allCards = await page.$$('a[href*="/maps/place/"]');
-    const toProcess = limit > 0 ? allCards.slice(0, limit) : allCards;
-    console.log(`[discover] ${toProcess.length} cards found, extracting details...`);
+    // Step 1: extract all card metadata in one JS pass (no element handles held)
+    const allCardData = await page.evaluate((lim) => {
+      const cards = Array.from(document.querySelectorAll('a[href*="/maps/place/"]'));
+      const toUse = lim > 0 ? cards.slice(0, lim) : cards;
+      const seen = new Set();
+      return toUse.map(card => {
+        const href = card.getAttribute("href") || "";
+        if (seen.has(href)) return null;
+        seen.add(href);
+        const container = card.parentElement || card;
+        const name = container.querySelector('.qBF1Pd, .fontHeadlineSmall, [class*="fontHeadline"]')?.textContent?.trim() || "";
+        if (!name) return null;
+        const rating      = container.querySelector('span.MW4etd')?.textContent?.trim() || "";
+        const reviewCount = container.querySelector('span.UY7F9')?.textContent?.replace(/[()]/g, "").trim() || "";
+        const category    = container.querySelector('.W4Efsd > span:first-child, .DkEaL')?.textContent?.trim() || "";
+        const address     = container.querySelector('.W4Efsd > span:last-child')?.textContent?.trim() || "";
+        const placeMatch  = href.match(/\/maps\/place\/([^/@]+)/);
+        const mapsUrl     = placeMatch ? `https://www.google.com/maps${placeMatch[0]}` : "";
+        return { href, name, category, rating, reviewCount, address, mapsUrl };
+      }).filter(Boolean);
+    }, limit);
+
+    console.log(`[discover] ${allCardData.length} cards collected, clicking for details...`);
 
     const businesses = [];
-    const seenHrefs = new Set();
 
-    for (let i = 0; i < toProcess.length; i++) {
-      const card = toProcess[i];
+    // Step 2: click each card using a fresh query (not a stale handle)
+    for (let i = 0; i < allCardData.length; i++) {
+      const data = allCardData[i];
+      let website = null, phone = null, email = null;
       try {
-        const href = await card.getAttribute("href") || "";
-        if (seenHrefs.has(href)) continue;
-        seenHrefs.add(href);
+        // Always re-query — element handles go stale after other cards are clicked
+        const escapedHref = data.href.replace(/"/g, '\"');
+        const card = await page.$(`a[href="${escapedHref}"]`);
+        if (card) {
+          await card.scrollIntoViewIfNeeded().catch(() => {});
+          await randSleep(150, 250);
 
-        // Get the place URL from the card href — this identifies the business
-        const placeMatch = href.match(/\/maps\/place\/([^/@]+)/);
-        const placePath  = placeMatch ? placeMatch[0] : null;
-
-        // Extract list-view metadata from the card container
-        const container = await card.$("..") || card;
-        const name = await container.$eval(
-          '.qBF1Pd, .fontHeadlineSmall, [class*="fontHeadline"]',
-          el => el.textContent.trim()
-        ).catch(() => "");
-        if (!name) continue;
-
-        const rating      = await container.$eval('span.MW4etd', el => el.textContent.trim()).catch(() => "");
-        const reviewCount = await container.$eval('span.UY7F9',  el => el.textContent.replace(/[()]/g, "").trim()).catch(() => "");
-        const category    = await container.$eval('.W4Efsd > span:first-child, .DkEaL', el => el.textContent.trim()).catch(() => "");
-        const address     = await container.$eval('.W4Efsd > span:last-child', el => el.textContent.trim()).catch(() => "");
-        const mapsUrl     = `https://www.google.com/maps${placePath || "/search/" + encodeURIComponent(name)}`;
-
-        // Click the card and wait for the detail panel to show THIS business
-        // We verify the panel loaded correctly by checking the panel title matches
-        let website = null, phone = null, email = null;
-
-        try {
-          // Scroll the card into view
-          await card.scrollIntoViewIfNeeded();
-          await randSleep(100, 200);
-
-          // Get current panel state before clicking (to detect change)
           const panelBefore = await page.$eval(
             '[role="main"] h1, .DUwDvf, .fontHeadlineLarge',
             el => el.textContent.trim()
@@ -219,32 +214,17 @@ async function _searchOneMaps({ searchUrl, limit, context, DEBUG, emit, keyword 
 
           await card.click();
 
-          // Wait for panel to update — poll until the panel title changes to this business name
-          // or a reasonable timeout
-          let panelLoaded = false;
+          // Poll until the detail panel updates to show this business
           for (let attempt = 0; attempt < 20; attempt++) {
             await sleep(200);
             const panelTitle = await page.$eval(
               '[role="main"] h1, .DUwDvf, .fontHeadlineLarge',
               el => el.textContent.trim()
             ).catch(() => "");
-
-            // Panel has updated if title changed from before
-            if (panelTitle && panelTitle !== panelBefore) {
-              panelLoaded = true;
-              // Extra safety: verify title roughly matches expected name
-              // (first 3 chars match, case-insensitive)
-              break;
-            }
+            if (panelTitle && panelTitle !== panelBefore) break;
           }
 
-          if (!panelLoaded) {
-            await sleep(1000); // one more second
-          }
-
-          // Extract website — try specific selectors first, then filtered generic
           website = await page.evaluate(() => {
-            // Most reliable: the "Website" action button
             const specific = [
               'a[data-item-id="authority"]',
               'a[aria-label*="ウェブサイト"]',
@@ -255,28 +235,21 @@ async function _searchOneMaps({ searchUrl, limit, context, DEBUG, emit, keyword 
               const el = document.querySelector(sel);
               if (el?.getAttribute("href")?.startsWith("http")) return el.getAttribute("href");
             }
-            // Fallback: any external link in the detail panel that looks like a real site
             const panel = document.querySelector('[role="main"]');
             if (!panel) return null;
             for (const a of panel.querySelectorAll('a[href^="http"]')) {
               const h = a.getAttribute("href") || "";
               if (h.startsWith("http") &&
-                  !h.includes("google.com") &&
-                  !h.includes("goo.gl") &&
-                  !h.includes("tripadvisor") &&
-                  !h.includes("booking.com") &&
-                  !h.includes("instagram.com") &&
-                  !h.includes("facebook.com") &&
-                  !h.includes("airbnb") &&
-                  !h.includes("agoda") &&
-                  !h.includes("jalan.net")) {
+                  !h.includes("google.com") && !h.includes("goo.gl") &&
+                  !h.includes("tripadvisor") && !h.includes("booking.com") &&
+                  !h.includes("instagram.com") && !h.includes("facebook.com") &&
+                  !h.includes("airbnb") && !h.includes("agoda") && !h.includes("jalan.net")) {
                 return h;
               }
             }
             return null;
           });
 
-          // Apply domain blocklist as final filter
           if (!isBusinessWebsite(website)) website = null;
 
           phone = await page.$eval(
@@ -288,30 +261,24 @@ async function _searchOneMaps({ searchUrl, limit, context, DEBUG, emit, keyword 
           const emailMatch = bodyText.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
           if (emailMatch) email = emailMatch[0].toLowerCase();
 
-          // Close the panel
           await page.keyboard.press("Escape");
           await randSleep(200, 400);
-
-        } catch (e) {
-          console.warn(`[discover] detail failed "${name}": ${e.message}`);
         }
-
-        businesses.push({
-          name, category,
-          rating: rating || null, review_count: reviewCount || null,
-          address, maps_url: mapsUrl,
-          website, phone, email,
-          status: "new",
-        });
-
-        if (i % 10 === 0 || DEBUG) {
-          console.log(`[discover] ${i + 1}/${toProcess.length}: ${name} → ${website || "—"}`);
-        }
-        emit({ type: "detail", index: i + 1, total: toProcess.length, name, website: website || null, keyword });
-
       } catch (e) {
-        console.warn(`[discover] card ${i} error: ${e.message}`);
+        console.warn(`[discover] detail failed "${data.name}": ${e.message.split("\n")[0]}`);
       }
+
+      businesses.push({
+        name: data.name, category: data.category,
+        rating: data.rating || null, review_count: data.reviewCount || null,
+        address: data.address, maps_url: data.mapsUrl,
+        website, phone, email, status: "new",
+      });
+
+      if (i % 10 === 0 || DEBUG) {
+        console.log(`[discover] ${i + 1}/${allCardData.length}: ${data.name} → ${website || "—"}`);
+      }
+      emit({ type: "detail", index: i + 1, total: allCardData.length, name: data.name, website: website || null, keyword });
     }
 
     const withWebsite = businesses.filter(b => b.website).length;

@@ -36,19 +36,7 @@ export default function ScanPage() {
 
   const isScanning = store.status === "scanning" || localScanning;
 
-  function getScanSettings() {
-    return {
-      ai_provider: settings.aiProvider,
-      ollama_base_url: settings.ollamaBaseUrl,
-      ollama_model: settings.ollamaModel,
-      openai_api_key: settings.openaiApiKey,
-      openai_model: settings.openaiModel,
-      anthropic_api_key: settings.anthropicApiKey,
-      anthropic_model: settings.anthropicModel,
-      screenshot_service_url: settings.screenshotServiceUrl,
-      max_deep_pages: settings.maxDeepPages,
-    };
-  }
+
 
 
   // After a scan completes, optionally extract found emails + auto-generate email

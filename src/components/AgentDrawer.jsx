@@ -2,25 +2,13 @@ import { useRef, useEffect, useState } from "react";
 import { X, Send, Bot } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAgentStore } from "../stores/agentStore";
-import { useSettingsStore } from "../stores/settingsStore";
 import { useScanStore } from "../stores/scanStore";
+import { useAISettings } from "../hooks/useAISettings";
 import { api } from "../lib/api";
 
 export default function AgentDrawer() {
   const { isOpen, messages, status, setOpen, addMessage, setStatus } = useAgentStore();
-  const rawSettings = useSettingsStore();
-
-  const settings = {
-    ai_provider: rawSettings.aiProvider,
-    ollama_base_url: rawSettings.ollamaBaseUrl,
-    ollama_model: rawSettings.ollamaModel,
-    openai_api_key: rawSettings.openaiApiKey,
-    openai_model: rawSettings.openaiModel,
-    anthropic_api_key: rawSettings.anthropicApiKey,
-    anthropic_model: rawSettings.anthropicModel,
-    screenshot_service_url: rawSettings.screenshotServiceUrl,
-    max_deep_pages: rawSettings.maxDeepPages,
-  };
+  const { getScanSettings } = useAISettings();
   const { deepHistory, shallowHistory, deepActiveRun, shallowActiveRun } = useScanStore();
   const [input, setInput] = useState("");
   const bottomRef = useRef(null);
@@ -59,7 +47,7 @@ export default function AgentDrawer() {
     setStatus("thinking");
     try {
       const history = [...messages, { role: "user", content: text }];
-      const data = await api.agentChat(history, scanContext, settings);
+      const data = await api.agentChat(history, scanContext, getScanSettings());
       addMessage({ role: "assistant", content: data.reply });
     } catch (e) {
       addMessage({ role: "assistant", content: `Error: ${e.message}` });
