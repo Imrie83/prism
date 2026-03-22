@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  RefreshCw, Trash2, Mail, MailCheck, ChevronLeft, ChevronRight,
+  RefreshCw, Trash2, Mail, MailCheck,
   CheckSquare, Square, ExternalLink, AlertCircle, Inbox,
   ChevronUp, ChevronDown, Filter,
 } from "lucide-react";
 import { api } from "../lib/api";
+import SortHeader from "../components/SortHeader";
+import PaginationFooter from "../components/PaginationFooter";
 import { useScanStore } from "../stores/scanStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useEmailStore } from "../stores/emailStore";
@@ -51,23 +53,6 @@ function SevBadges({ counts }) {
 }
 
 // Sortable column header
-function SortHeader({ label, field, sortBy, sortDir, onSort, style = {} }) {
-  const active = sortBy === field;
-  return (
-    <span
-      onClick={() => onSort(field)}
-      style={{
-        cursor: "pointer", userSelect: "none", display: "inline-flex", alignItems: "center", gap: 3,
-        color: active ? "var(--blue)" : "var(--ink3)",
-        ...style,
-      }}>
-      {label}
-      {active
-        ? sortDir === "desc" ? <ChevronDown size={10} /> : <ChevronUp size={10} />
-        : <ChevronDown size={10} style={{ opacity: 0.3 }} />}
-    </span>
-  );
-}
 
 export default function HistoryPage() {
   const [records, setRecords] = useState([]);
@@ -416,20 +401,13 @@ export default function HistoryPage() {
         </div>
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 20 }}>
-          <button className="btn btn--ghost btn--sm"
-            onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-            <ChevronLeft size={14} />
-          </button>
-          <span style={{ fontSize: 12, color: "var(--ink2)" }}>Page {page} of {totalPages}</span>
-          <button className="btn btn--ghost btn--sm"
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      )}
+      <PaginationFooter
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        perPage={perPage}
+        onPage={setPage}
+      />
     </div>
   );
 }

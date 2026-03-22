@@ -9,5 +9,5 @@ __pycache__/
 .DS_Store
 Thumbs.db
 -e 
-# Local TinyDB
+# TinyDB data — never commit database files
 data/

@@ -5,32 +5,17 @@ import {
   Search, MapPin, ScanLine, ExternalLink, Trash2,
   ChevronDown, ChevronUp, RefreshCw, AlertCircle, Inbox,
   Globe, Star, CheckCircle, Filter, CheckSquare, Square,
-  ChevronLeft, ChevronRight, Bookmark, X,
+  Bookmark, X,
 } from "lucide-react";
 import { api } from "../lib/api";
+import SortHeader from "../components/SortHeader";
+import StatusBadge from "../components/StatusBadge";
+import PaginationFooter from "../components/PaginationFooter";
+import { useAISettings } from "../hooks/useAISettings";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useEmailStore } from "../stores/emailStore";
 import { useScanStore } from "../stores/scanStore";
 
-const STATUS_META = {
-  new:      { label: "New",      color: "var(--ink3)",   bg: "var(--surface)" },
-  queued:   { label: "Queued",   color: "var(--blue)",   bg: "var(--blue-glow)" },
-  scanning: { label: "Scanning", color: "var(--blue)",   bg: "var(--blue-glow)" },
-  scanned:  { label: "Scanned",  color: "var(--green)",  bg: "rgba(52,211,153,0.1)" },
-  emailed:  { label: "Emailed",  color: "var(--accent)", bg: "rgba(251,191,36,0.1)" },
-  skipped:  { label: "Skipped",  color: "var(--ink3)",   bg: "var(--surface)" },
-};
-
-function StatusBadge({ status }) {
-  const m = STATUS_META[status] || STATUS_META.new;
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99,
-      color: m.color, background: m.bg, border: `1px solid ${m.color}30`,
-      fontFamily: "var(--font-mono)", whiteSpace: "nowrap",
-    }}>{m.label}</span>
-  );
-}
 
 function RatingStars({ rating }) {
   if (!rating) return <span style={{ color: "var(--ink3)", fontSize: 11 }}>—</span>;
@@ -42,20 +27,6 @@ function RatingStars({ rating }) {
   );
 }
 
-function SortHeader({ label, field, sortBy, sortDir, onSort }) {
-  const active = sortBy === field;
-  return (
-    <span onClick={() => onSort(field)} style={{
-      cursor: "pointer", userSelect: "none", display: "inline-flex", alignItems: "center", gap: 3,
-      color: active ? "var(--blue)" : "var(--ink3)",
-    }}>
-      {label}
-      {active
-        ? sortDir === "desc" ? <ChevronDown size={10} /> : <ChevronUp size={10} />
-        : <ChevronDown size={10} style={{ opacity: 0.3 }} />}
-    </span>
-  );
-}
 
 const LIMIT_OPTIONS = [
   { label: "60",  value: 60 },
@@ -70,6 +41,7 @@ export default function DiscoverPage() {
   const settings = useSettingsStore();
   const emailStore = useEmailStore();
   const scanStore = useScanStore();
+  const { getScanSettings, getEmailSettings } = useAISettings();
 
   // All transient state lives in discoverStore so it survives tab switches
   const ds = useDiscoverStore();
@@ -180,7 +152,7 @@ export default function DiscoverPage() {
   const scanningUrl    = ds.scanningUrl || null;
   const setScanningUrl = (v) => ds.setField("scanningUrl", v);
 
-  function getAISettings() {
+  function getScanSettings() {
     return {
       ai_provider: settings.aiProvider,
       ollama_base_url: settings.ollamaBaseUrl,
@@ -193,22 +165,6 @@ export default function DiscoverPage() {
     };
   }
 
-  function getEmailAISettings() {
-    const provider = settings.emailAiProvider || settings.aiProvider;
-    return {
-      ai_provider: provider,
-      ollama_base_url: settings.ollamaBaseUrl,
-      ollama_model: provider === "ollama" ? (settings.emailOllamaModel || settings.ollamaModel) : settings.ollamaModel,
-      openai_api_key: settings.openaiApiKey,
-      openai_model: provider === "openai" ? (settings.emailOpenaiModel || settings.openaiModel) : settings.openaiModel,
-      anthropic_api_key: settings.anthropicApiKey,
-      anthropic_model: provider === "claude" ? (settings.emailAnthropicModel || settings.anthropicModel) : settings.anthropicModel,
-      your_name: settings.yourName,
-      your_title: settings.yourTitle,
-      your_email: settings.yourEmail,
-      your_website: settings.yourWebsite,
-    };
-  }
 
   const loadSessions = useCallback(async () => {
     try {
@@ -280,7 +236,7 @@ export default function DiscoverPage() {
     setRecords(rs => rs.map(r => r.website === url ? { ...r, status: "scanning" } : r));
 
     try {
-      const result = await api.analyzePage(url, getAISettings(), `discover-${Date.now()}`, null, "shallow");
+      const result = await api.analyzePage(url, getScanSettings(), `discover-${Date.now()}`, null, "shallow");
 
       // Update prospect with email if found
       const foundEmail = result.emails_found?.[0];
@@ -301,7 +257,7 @@ export default function DiscoverPage() {
 
       // Auto-generate email if toggle on
       if (settings.autoGenerateEmail) {
-        emailStore.generate(url, result, getEmailAISettings());
+        emailStore.generate(url, result, getEmailSettings());
       }
 
       await api.updateProspectStatus(url, "scanned");
@@ -897,42 +853,13 @@ export default function DiscoverPage() {
                   })}
                 </AnimatePresence>
 
-                {/* Pagination footer */}
-                {totalPages > 1 && (
-                  <div style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "10px 16px", borderTop: "1px solid var(--border)", background: "var(--bg3)",
-                  }}>
-                    <span style={{ fontSize: 11, color: "var(--ink3)" }}>
-                      {perPage === 0 ? `All ${records.length}` : `${((page-1)*perPage)+1}–${Math.min(page*perPage, records.length)} of ${records.length}`}
-                    </span>
-                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                      <button className="btn btn--ghost btn--sm" onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1}>
-                        <ChevronLeft size={13} />
-                      </button>
-                      {Array.from({ length: Math.min(totalPages, 7) }, (_, idx) => {
-                        let p;
-                        if (totalPages <= 7) p = idx + 1;
-                        else if (page <= 4) p = idx + 1;
-                        else if (page >= totalPages - 3) p = totalPages - 6 + idx;
-                        else p = page - 3 + idx;
-                        return (
-                          <button key={p} onClick={() => setPage(p)}
-                            style={{
-                              minWidth: 28, height: 28, borderRadius: 6,
-                              border: `1px solid ${p === page ? "var(--blue-line)" : "var(--border)"}`,
-                              background: p === page ? "var(--blue-glow)" : "transparent",
-                              color: p === page ? "var(--blue)" : "var(--ink3)",
-                              fontSize: 12, cursor: "pointer", fontWeight: p === page ? 700 : 400,
-                            }}>{p}</button>
-                        );
-                      })}
-                      <button className="btn btn--ghost btn--sm" onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page === totalPages}>
-                        <ChevronRight size={13} />
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <PaginationFooter
+                  page={page}
+                  totalPages={totalPages}
+                  total={records.length}
+                  perPage={perPage}
+                  onPage={setPage}
+                />
               </div>
             )}
           </>

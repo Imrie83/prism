@@ -6,6 +6,7 @@ import { useEmailStore } from "../stores/emailStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useAgentStore } from "../stores/agentStore";
 import { api } from "../lib/api";
+import { useAISettings } from "../hooks/useAISettings";
 
 const MODES = [
   { id: "shallow", label: "Shallow", icon: Search, desc: "Single page — full results + email generation" },
@@ -20,6 +21,7 @@ function makeTaskId(prefix) { return `${prefix}-${Date.now()}-${++_taskSeq}`; }
 export default function ScanPage() {
   const store = useScanStore();
   const settings = useSettingsStore();
+  const { getScanSettings, getEmailSettings } = useAISettings();
   const agentStore = useAgentStore();
   const emailStore = useEmailStore();
 
@@ -34,7 +36,7 @@ export default function ScanPage() {
 
   const isScanning = store.status === "scanning" || localScanning;
 
-  function getSettings() {
+  function getScanSettings() {
     return {
       ai_provider: settings.aiProvider,
       ollama_base_url: settings.ollamaBaseUrl,
@@ -48,22 +50,6 @@ export default function ScanPage() {
     };
   }
 
-  function getEmailAISettings() {
-    const provider = settings.emailAiProvider || settings.aiProvider;
-    return {
-      ai_provider:       provider,
-      ollama_base_url:   settings.ollamaBaseUrl,
-      ollama_model:      provider === "ollama" ? (settings.emailOllamaModel || settings.ollamaModel) : settings.ollamaModel,
-      openai_api_key:    settings.openaiApiKey,
-      openai_model:      provider === "openai" ? (settings.emailOpenaiModel || settings.openaiModel) : settings.openaiModel,
-      anthropic_api_key: settings.anthropicApiKey,
-      anthropic_model:   provider === "claude" ? (settings.emailAnthropicModel || settings.anthropicModel) : settings.anthropicModel,
-      your_name:    settings.yourName,
-      your_title:   settings.yourTitle,
-      your_email:   settings.yourEmail,
-      your_website: settings.yourWebsite,
-    };
-  }
 
   // After a scan completes, optionally extract found emails + auto-generate email
   function handleScanResult(url, result) {
@@ -85,7 +71,7 @@ export default function ScanPage() {
     }
     // Auto-generate email draft if toggle is on
     if (settings.autoGenerateEmail) {
-      emailStore.generate(url, result, getEmailAISettings());
+      emailStore.generate(url, result, getEmailSettings());
     }
   }
 
@@ -131,7 +117,7 @@ export default function ScanPage() {
     const runId = store.startShallow(url);
     try {
       const result = await withRetry(
-        () => api.analyzePage(url, getSettings(), taskId, abortRef.current.signal, "shallow", settings.visionMode),
+        () => api.analyzePage(url, getScanSettings(), taskId, abortRef.current.signal, "shallow", settings.visionMode),
         `shallow ${url}`
       );
       store.finishShallow(runId, result);
@@ -178,7 +164,7 @@ export default function ScanPage() {
       activeTaskIds.current.add(taskId);
       try {
         const result = await withRetry(
-          () => api.analyzePage(pageUrl, getSettings(), taskId, abortRef.current.signal, "deep"),
+          () => api.analyzePage(pageUrl, getScanSettings(), taskId, abortRef.current.signal, "deep"),
           `deep ${pageUrl}`
         );
         store.addDeepPage(runId, { url: pageUrl, title: result.title || pageUrl, result });
@@ -244,7 +230,7 @@ export default function ScanPage() {
       activeTaskIds.current.add(taskId);
       try {
         const result = await withRetry(
-          () => api.analyzePage(url, getSettings(), taskId, abortRef.current.signal, "batch"),
+          () => api.analyzePage(url, getScanSettings(), taskId, abortRef.current.signal, "batch"),
           `batch ${url}`
         );
         store.addBatchResult(runId, { url, result });

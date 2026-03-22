@@ -10,6 +10,7 @@ import {
   Clock, Zap, Mail, Eye, Edit3
 } from "lucide-react";
 import { useEmailStore } from "../stores/emailStore";
+import { useAISettings } from "../hooks/useAISettings";
 import TokenBadge from "./TokenBadge";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useScanStore } from "../stores/scanStore";
@@ -91,6 +92,7 @@ function EmailPreview({ html }) {
 export default function EmailDrawer() {
   const store = useEmailStore();
   const settings = useSettingsStore();
+  const { getEmailSettings } = useAISettings();
   const { shallowHistory, batchHistory } = useScanStore();
   const { drawerUrl, closeDrawer } = store;
   const [activeTab, setActiveTab] = useState("edit"); // "edit" | "preview"
@@ -153,23 +155,6 @@ export default function EmailDrawer() {
     }
   }, [drawerUrl, emailData?.htmlContent]);
 
-  function getAISettings() {
-    // Use email-specific provider/model if set, otherwise fall back to audit model
-    const provider = settings.emailAiProvider || settings.aiProvider;
-    return {
-      ai_provider:       provider,
-      ollama_base_url:   settings.ollamaBaseUrl,
-      ollama_model:      provider === "ollama" ? (settings.emailOllamaModel   || settings.ollamaModel)   : settings.ollamaModel,
-      openai_api_key:    settings.openaiApiKey,
-      openai_model:      provider === "openai" ? (settings.emailOpenaiModel   || settings.openaiModel)   : settings.openaiModel,
-      anthropic_api_key: settings.anthropicApiKey,
-      anthropic_model:   provider === "claude" ? (settings.emailAnthropicModel || settings.anthropicModel) : settings.anthropicModel,
-      your_name:    settings.yourName,
-      your_title:   settings.yourTitle,
-      your_email:   settings.yourEmail,
-      your_website: settings.yourWebsite,
-    };
-  }
 
   // Capture a screenshot of the results summary panel via html2canvas if available
   // Falls back to sending the page screenshot from the scan result
@@ -190,7 +175,7 @@ export default function EmailDrawer() {
       }
     }
     // Backend generates the report card HTML from scan data — no screenshot needed here
-    store.generate(drawerUrl, scanResult, getAISettings());
+    store.generate(drawerUrl, scanResult, getEmailSettings());
   }
 
   async function send() {
