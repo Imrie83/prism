@@ -1,11 +1,15 @@
 """
 History API routes — /api/history/*
 """
+
 from fastapi import APIRouter, HTTPException
 
 from .db import (
-    scans_db, screenshots_db, ScanRecord,
-    upsert_scan, get_full_scan,
+    scans_db,
+    screenshots_db,
+    ScanRecord,
+    upsert_scan,
+    get_full_scan,
 )
 from .models import SaveEmailDraftRequest
 
@@ -35,7 +39,8 @@ async def get_history(
 
     if filter_score_min > 0 or filter_score_max < 100:
         all_records = [
-            r for r in all_records
+            r
+            for r in all_records
             if filter_score_min <= (r.get("score") or 0) <= filter_score_max
         ]
 
@@ -46,30 +51,36 @@ async def get_history(
     elif sort_by == "total_issues":
         all_records.sort(key=lambda r: r.get("total_issues") or 0, reverse=reverse)
     elif sort_by == "email_sent":
-        all_records.sort(key=lambda r: r.get("email", {}).get("sent_at") or "", reverse=reverse)
+        all_records.sort(
+            key=lambda r: r.get("email", {}).get("sent_at") or "", reverse=reverse
+        )
     else:
         all_records.sort(key=lambda r: r.get("scanned_at", ""), reverse=reverse)
 
-    total        = len(all_records)
-    start        = (page - 1) * per_page
-    page_records = all_records[start:start + per_page]
+    total = len(all_records)
+    start = (page - 1) * per_page
+    page_records = all_records[start : start + per_page]
 
     slim = []
     for r in page_records:
-        slim.append({
-            "url":          r.get("url"),
-            "scan_mode":    r.get("scan_mode"),
-            "score":        r.get("score"),
-            "title":        r.get("title"),
-            "total_issues": r.get("total_issues"),
-            "issue_counts": r.get("issue_counts"),
-            "scanned_at":   r.get("scanned_at"),
-            "email": {
-                "recipient":    r.get("email", {}).get("recipient"),
-                "sent_at":      r.get("email", {}).get("sent_at"),
-                "got_response": r.get("email", {}).get("got_response", False),
-            } if r.get("email") else None,
-        })
+        slim.append(
+            {
+                "url": r.get("url"),
+                "scan_mode": r.get("scan_mode"),
+                "score": r.get("score"),
+                "title": r.get("title"),
+                "total_issues": r.get("total_issues"),
+                "issue_counts": r.get("issue_counts"),
+                "scanned_at": r.get("scanned_at"),
+                "email": {
+                    "recipient": r.get("email", {}).get("recipient"),
+                    "sent_at": r.get("email", {}).get("sent_at"),
+                    "got_response": r.get("email", {}).get("got_response", False),
+                }
+                if r.get("email")
+                else None,
+            }
+        )
     return {"records": slim, "total": total, "page": page, "per_page": per_page}
 
 
@@ -80,15 +91,17 @@ async def check_history(url: str):
     if not record:
         return {"exists": False}
     return {
-        "exists":     True,
-        "score":      record.get("score"),
-        "title":      record.get("title"),
+        "exists": True,
+        "score": record.get("score"),
+        "title": record.get("title"),
         "scanned_at": record.get("scanned_at"),
         "email": {
-            "recipient":    record.get("email", {}).get("recipient"),
-            "sent_at":      record.get("email", {}).get("sent_at"),
+            "recipient": record.get("email", {}).get("recipient"),
+            "sent_at": record.get("email", {}).get("sent_at"),
             "got_response": record.get("email", {}).get("got_response", False),
-        } if record.get("email") else None,
+        }
+        if record.get("email")
+        else None,
     }
 
 
@@ -107,7 +120,7 @@ async def toggle_response(url: str):
     record = scans_db.get(ScanRecord.url == url)
     if not record or not record.get("email"):
         raise HTTPException(404, "No email record found for this URL")
-    current     = record["email"].get("got_response", False)
+    current = record["email"].get("got_response", False)
     email_block = {**record["email"], "got_response": not current}
     scans_db.update({"email": email_block}, ScanRecord.url == url)
     return {"got_response": not current}

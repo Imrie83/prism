@@ -5,14 +5,16 @@ Prompt strings and builders for the Prism audit and email generation.
 
 # ── Audit system prompt ───────────────────────────────────────────────────────
 
+
 class PromptBuilder:
     """Assembles a prompt from named blocks in insertion order.
     Blocks can be set/replaced individually — shared text lives once,
     only variable sections are swapped per call.
     """
+
     def __init__(self):
         self._blocks: dict[str, str] = {}
-        self._order:  list[str]      = []
+        self._order: list[str] = []
 
     def set(self, name: str, text: str) -> "PromptBuilder":
         if name not in self._blocks:
@@ -152,12 +154,8 @@ _INPUT_FRAMING_VISION = (
 def build_audit_system_prompt(*, vision_mode: bool, scan_mode: str) -> str:
     """Assemble the audit system prompt from shared blocks + mode-specific pieces."""
     if scan_mode == "deep":
-        summary_instruction = (
-            "2 sentence candid internal assessment — be specific and direct about the main issues found"
-        )
-        language_instruction = (
-            "Write all text fields (summary, location, explanation, suggestion, original) in English."
-        )
+        summary_instruction = "2 sentence candid internal assessment — be specific and direct about the main issues found"
+        language_instruction = "Write all text fields (summary, location, explanation, suggestion, original) in English."
     else:
         summary_instruction = (
             "2 sentence opportunity-framed summary in Japanese — highlight what the site does well and what "
@@ -171,14 +169,19 @@ def build_audit_system_prompt(*, vision_mode: bool, scan_mode: str) -> str:
         )
 
     builder = PromptBuilder()
-    builder.set("role",          _AUDIT_ROLE)
-    builder.set("input_framing", _INPUT_FRAMING_VISION if vision_mode else _INPUT_FRAMING_STANDARD)
-    builder.set("logo_note",     _AUDIT_LOGO_NOTE)
-    builder.set("dimensions",    _AUDIT_DIMENSIONS)
-    builder.set("scoring",       _AUDIT_SCORING)
-    builder.set("issue_format",  _AUDIT_ISSUE_FORMAT)
-    builder.set("language",      f"LANGUAGE INSTRUCTIONS — follow exactly:\n{language_instruction}")
-    builder.set("json_output",   _AUDIT_JSON_OUTPUT)
+    builder.set("role", _AUDIT_ROLE)
+    builder.set(
+        "input_framing",
+        _INPUT_FRAMING_VISION if vision_mode else _INPUT_FRAMING_STANDARD,
+    )
+    builder.set("logo_note", _AUDIT_LOGO_NOTE)
+    builder.set("dimensions", _AUDIT_DIMENSIONS)
+    builder.set("scoring", _AUDIT_SCORING)
+    builder.set("issue_format", _AUDIT_ISSUE_FORMAT)
+    builder.set(
+        "language", f"LANGUAGE INSTRUCTIONS — follow exactly:\n{language_instruction}"
+    )
+    builder.set("json_output", _AUDIT_JSON_OUTPUT)
 
     return builder.build(summary_instruction=summary_instruction)
 
@@ -188,8 +191,11 @@ def build_audit_user_prompt(html: str, vision_mode: bool) -> str:
     if vision_mode:
         return "Analyse this Japanese company website from the screenshot(s) provided."
     from .semantic import extract_semantic_groups
+
     semantic = extract_semantic_groups(html)
-    return f"Analyse this Japanese company website. Semantic page structure:\n\n{semantic}"
+    return (
+        f"Analyse this Japanese company website. Semantic page structure:\n\n{semantic}"
+    )
 
 
 # ── Agent system prompt ───────────────────────────────────────────────────────

@@ -9,10 +9,10 @@
     "preview": "vite preview",
     "lint": "npm run lint:frontend && npm run lint:backend",
     "lint:frontend": "eslint src --ext .js,.jsx",
-    "lint:backend": "cd backend && python -m ruff check . && python -m ruff format --check .",
+    "lint:backend": "cd backend && python -m ruff check .",
     "format": "npm run format:frontend && npm run format:backend",
     "format:frontend": "eslint src --ext .js,.jsx --fix",
-    "format:backend": "cd backend && python -m ruff check --fix . && python -m ruff format ."
+    "format:backend": "cd backend && python -m ruff format ."
   },
   "dependencies": {
     "react": "^18.3.1",

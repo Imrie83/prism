@@ -6,6 +6,7 @@ Split storage pattern:
   screenshots.json — screenshot blobs (large, loaded on demand only)
   prospects.json   — discover prospects
 """
+
 import os
 from datetime import datetime, timezone
 
@@ -13,10 +14,10 @@ from tinydb import TinyDB, Query
 
 os.makedirs("/app/data", exist_ok=True)
 
-scans_db       = TinyDB("/app/data/scans.json",       indent=2, ensure_ascii=False)
+scans_db = TinyDB("/app/data/scans.json", indent=2, ensure_ascii=False)
 screenshots_db = TinyDB("/app/data/screenshots.json", indent=2, ensure_ascii=False)
-prospects_db   = TinyDB("/app/data/prospects.json",   indent=2, ensure_ascii=False)
-ScanRecord     = Query()
+prospects_db = TinyDB("/app/data/prospects.json", indent=2, ensure_ascii=False)
+ScanRecord = Query()
 ProspectRecord = Query()
 
 
@@ -25,7 +26,7 @@ def migrate_legacy_db() -> None:
     Runs on startup only if db.json exists and hasn't been migrated yet.
     """
     legacy_path = "/app/data/db.json"
-    bak_path    = "/app/data/db.json.bak"
+    bak_path = "/app/data/db.json.bak"
     if not os.path.exists(legacy_path):
         return
     print("[db] legacy db.json found — migrating to scans.json + screenshots.json...")
@@ -57,19 +58,19 @@ def upsert_scan(data: dict) -> None:
     url = data.get("url", "")
     if not url:
         return
-    existing    = scans_db.get(ScanRecord.url == url)
+    existing = scans_db.get(ScanRecord.url == url)
     email_block = existing.get("email") if existing else None
     record = {
         "emails_found": data.get("emails_found", []),
-        "url":          url,
-        "scan_mode":    data.get("scan_mode", "shallow"),
-        "score":        data.get("score", 0),
-        "title":        data.get("title", ""),
-        "summary":      data.get("summary", ""),
+        "url": url,
+        "scan_mode": data.get("scan_mode", "shallow"),
+        "score": data.get("score", 0),
+        "title": data.get("title", ""),
+        "summary": data.get("summary", ""),
         "total_issues": data.get("totalIssues", 0),
         "issue_counts": data.get("issueCounts", {}),
-        "issues":       data.get("issues", []),
-        "scanned_at":   datetime.now(timezone.utc).isoformat(),
+        "issues": data.get("issues", []),
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
     }
     if email_block:
         record["email"] = email_block
@@ -90,10 +91,10 @@ def update_email(url: str, recipient: str, subject: str, html: str) -> None:
         print(f"[db] ⚠ no scan record for {url} — email block not saved")
         return
     email_block = {
-        "recipient":    recipient,
-        "subject":      subject,
-        "html":         html,
-        "sent_at":      datetime.now(timezone.utc).isoformat(),
+        "recipient": recipient,
+        "subject": subject,
+        "html": html,
+        "sent_at": datetime.now(timezone.utc).isoformat(),
         "got_response": existing.get("email", {}).get("got_response", False),
     }
     scans_db.update({"email": email_block}, ScanRecord.url == url)

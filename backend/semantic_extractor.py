@@ -12,9 +12,10 @@ from bs4 import BeautifulSoup, Tag
 
 # ── Data structures ────────────────────────────────────────────────────────────
 
+
 @dataclass
 class SemanticElement:
-    role: str           # heading | paragraph | button | cta | link | image | list | label | input | nav-item
+    role: str  # heading | paragraph | button | cta | link | image | list | label | input | nav-item
     text: str
     tag: str
     attrs: dict = field(default_factory=dict)
@@ -22,7 +23,7 @@ class SemanticElement:
 
 @dataclass
 class SemanticGroup:
-    role: str           # hero | nav | main-content | cta-section | footer | form | sidebar | card | unknown
+    role: str  # hero | nav | main-content | cta-section | footer | form | sidebar | card | unknown
     elements: list[SemanticElement] = field(default_factory=list)
     depth: int = 0
 
@@ -58,7 +59,7 @@ class PageStructure:
         for i, group in enumerate(self.groups):
             if group.is_empty():
                 continue
-            lines.append(f"--- SECTION {i+1}: {group.role.upper()} ---")
+            lines.append(f"--- SECTION {i + 1}: {group.role.upper()} ---")
             for el in group.elements:
                 t = el.text.strip()
                 if t:
@@ -74,30 +75,56 @@ class PageStructure:
 # ── Role detection ─────────────────────────────────────────────────────────────
 
 SECTION_ROLE_SIGNALS = {
-    "hero":         ["hero", "banner", "jumbotron", "masthead", "splash", "top", "main-visual"],
-    "nav":          ["nav", "navigation", "menu", "header", "site-header", "navbar", "topbar", "gnav"],
-    "footer":       ["footer", "site-footer", "foot"],
-    "cta-section":  ["cta", "call-to-action", "action", "get-started", "signup", "contact", "inquiry", "お問い合わせ"],
-    "form":         ["form", "contact-form", "inquiry-form", "login", "register", "search"],
-    "sidebar":      ["sidebar", "aside", "side", "widget"],
-    "card":         ["card", "item", "product", "service", "feature", "tile"],
+    "hero": ["hero", "banner", "jumbotron", "masthead", "splash", "top", "main-visual"],
+    "nav": [
+        "nav",
+        "navigation",
+        "menu",
+        "header",
+        "site-header",
+        "navbar",
+        "topbar",
+        "gnav",
+    ],
+    "footer": ["footer", "site-footer", "foot"],
+    "cta-section": [
+        "cta",
+        "call-to-action",
+        "action",
+        "get-started",
+        "signup",
+        "contact",
+        "inquiry",
+        "お問い合わせ",
+    ],
+    "form": ["form", "contact-form", "inquiry-form", "login", "register", "search"],
+    "sidebar": ["sidebar", "aside", "side", "widget"],
+    "card": ["card", "item", "product", "service", "feature", "tile"],
     "main-content": ["content", "main", "body", "article", "post", "about", "news"],
 }
 
+
 def detect_section_role(tag: Tag) -> str:
     # Check semantic HTML tags first
-    if tag.name == "nav":      return "nav"
-    if tag.name == "footer":   return "footer"
-    if tag.name == "header":   return "hero"
-    if tag.name == "aside":    return "sidebar"
-    if tag.name == "main":     return "main-content"
-    if tag.name == "form":     return "form"
+    if tag.name == "nav":
+        return "nav"
+    if tag.name == "footer":
+        return "footer"
+    if tag.name == "header":
+        return "hero"
+    if tag.name == "aside":
+        return "sidebar"
+    if tag.name == "main":
+        return "main-content"
+    if tag.name == "form":
+        return "form"
 
     # Check class/id/aria-label
     signals = []
     for attr in ["class", "id", "aria-label", "data-section"]:
         val = tag.get(attr, "")
-        if isinstance(val, list): val = " ".join(val)
+        if isinstance(val, list):
+            val = " ".join(val)
         signals.append(val.lower())
     combined = " ".join(signals)
 
@@ -150,10 +177,39 @@ def extract_text(tag: Tag) -> str:
 
 # ── Containment sections ───────────────────────────────────────────────────────
 
-SECTION_TAGS = {"section", "article", "div", "header", "footer", "nav", "aside", "main", "form"}
-ELEMENT_TAGS = {"h1","h2","h3","h4","h5","h6","p","button","a","input","textarea","label","ul","ol","li","img","span","strong"}
+SECTION_TAGS = {
+    "section",
+    "article",
+    "div",
+    "header",
+    "footer",
+    "nav",
+    "aside",
+    "main",
+    "form",
+}
+ELEMENT_TAGS = {
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p",
+    "button",
+    "a",
+    "input",
+    "textarea",
+    "label",
+    "ul",
+    "ol",
+    "li",
+    "img",
+    "span",
+    "strong",
+}
 
-MIN_SECTION_ELEMENTS = 1   # a group needs at least 1 meaningful element
+MIN_SECTION_ELEMENTS = 1  # a group needs at least 1 meaningful element
 
 
 def is_structural(tag: Tag) -> bool:
@@ -165,8 +221,23 @@ def is_structural(tag: Tag) -> bool:
     if len(children) <= 1 and tag.name == "div":
         return False
     # Skip if it only contains inline elements
-    block_children = [c for c in children if c.name in SECTION_TAGS | {"p","h1","h2","h3","h4","h5","h6","ul","ol","form","button"}]
-    return len(block_children) > 0 or tag.name in {"section","article","nav","header","footer","aside","main","form"}
+    block_children = [
+        c
+        for c in children
+        if c.name
+        in SECTION_TAGS
+        | {"p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "form", "button"}
+    ]
+    return len(block_children) > 0 or tag.name in {
+        "section",
+        "article",
+        "nav",
+        "header",
+        "footer",
+        "aside",
+        "main",
+        "form",
+    }
 
 
 def extract_direct_elements(tag: Tag) -> list[SemanticElement]:
@@ -182,9 +253,15 @@ def extract_direct_elements(tag: Tag) -> list[SemanticElement]:
             text = extract_text(child)
             if text and len(text) > 1:
                 attrs = {}
-                if child.name == "a": attrs["href"] = child.get("href", "")
-                if child.name == "img": attrs["src"] = child.get("src", "")[:80]
-                elements.append(SemanticElement(role=role, text=text[:300], tag=child.name, attrs=attrs))
+                if child.name == "a":
+                    attrs["href"] = child.get("href", "")
+                if child.name == "img":
+                    attrs["src"] = child.get("src", "")[:80]
+                elements.append(
+                    SemanticElement(
+                        role=role, text=text[:300], tag=child.name, attrs=attrs
+                    )
+                )
         else:
             # Recurse into non-section wrappers (div.text, span, etc.)
             if child.name in {"div", "span", "section"} and not is_structural(child):
@@ -233,6 +310,7 @@ def extract_groups(soup: BeautifulSoup, max_groups: int = 30) -> list[SemanticGr
 
 # ── Main entry point ───────────────────────────────────────────────────────────
 
+
 def extract_page_structure(html: str) -> PageStructure:
     soup = BeautifulSoup(html, "lxml")
 
@@ -247,9 +325,11 @@ def extract_page_structure(html: str) -> PageStructure:
     # Meta
     meta = {}
     desc = soup.find("meta", attrs={"name": "description"})
-    if desc: meta["description"] = desc.get("content", "")
+    if desc:
+        meta["description"] = desc.get("content", "")
     kw = soup.find("meta", attrs={"name": "keywords"})
-    if kw: meta["keywords"] = kw.get("content", "")
+    if kw:
+        meta["keywords"] = kw.get("content", "")
 
     groups = extract_groups(soup)
 

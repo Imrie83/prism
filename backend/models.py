@@ -1,6 +1,7 @@
 """
 Pydantic request/response models for the Prism API.
 """
+
 from typing import Any
 from pydantic import BaseModel
 
@@ -20,9 +21,9 @@ class AISettings(BaseModel):
 class AnalyzeRequest(BaseModel):
     url: str
     settings: AISettings
-    task_id: str | None = None   # client-provided ID for cancellation
-    scan_mode: str = "shallow"   # "shallow" | "deep" | "batch"
-    vision_mode: bool = False    # True = skip HTML extraction, use up to 2 screenshots
+    task_id: str | None = None  # client-provided ID for cancellation
+    scan_mode: str = "shallow"  # "shallow" | "deep" | "batch"
+    vision_mode: bool = False  # True = skip HTML extraction, use up to 2 screenshots
 
 
 class CrawlRequest(BaseModel):
@@ -87,4 +88,4 @@ class SaveEmailDraftRequest(BaseModel):
 class DiscoverSearchRequest(BaseModel):
     keywords: str
     location: str = ""
-    limit: int = 120   # 0 = all
+    limit: int = 120
