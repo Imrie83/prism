@@ -123,6 +123,13 @@ export const api = {
     return res.json();
   },
 
+  async updateEmailRecipient(url, recipient) {
+    await fetch(
+      `${BASE}/history/update-email-recipient?url=${encodeURIComponent(url)}&recipient=${encodeURIComponent(recipient)}`,
+      { method: "POST" }
+    );
+  },
+
   async saveEmailDraft(url, subject, html) {
     const res = await fetch(
       `${BASE}/history/save-email?url=${encodeURIComponent(url)}&subject=${encodeURIComponent(subject)}`,
@@ -151,6 +158,11 @@ export const api = {
         .catch(reject);
     });
   },
+  async getProspect(website) {
+    const res = await fetch(`${BASE}/discover/prospect?website=${encodeURIComponent(website)}`);
+    return res.json();
+  },
+
   async getProspects(sessionId, sortBy = "discovered_at", sortDir = "desc", filterStatus = "all", filterHasEmail = "all") {
     const params = new URLSearchParams({ sort_by: sortBy, sort_dir: sortDir, filter_status: filterStatus, filter_has_email: filterHasEmail });
     if (sessionId) params.set("session_id", sessionId);

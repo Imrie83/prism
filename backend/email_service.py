@@ -322,7 +322,6 @@ async def _do_generate_email(
 @router.post("/api/generate-email")
 async def generate_email(req: GenerateEmailRequest):
     """Streams keepalives while AI writes the email — prevents gateway 504s."""
-    import time
     s      = req.settings
     system = EMAIL_SYSTEM.format(
         name=s.your_name, title=s.your_title,
@@ -427,7 +426,7 @@ REMEMBER:
 - The compliment must be SPECIFIC to this site, not generic
 - Keep English under 150 words total
 - One clear ask at the end — nothing more
-- The personalised report is available at {req.settings.your_website}
+- The personalised audit report is embedded directly in this email below the message — do NOT say it is "available at" any website or URL. Say something like "I've included a personalised report below" or "you'll find a brief audit below this message"
 
 Return the bilingual email as JSON following your system prompt exactly."""
 

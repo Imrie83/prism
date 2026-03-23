@@ -3,12 +3,13 @@
  * Used in DiscoverPage — extracted for potential reuse in HistoryPage.
  */
 const STATUS_META = {
-  new:      { label: "New",      color: "var(--ink3)",   bg: "var(--surface)" },
-  queued:   { label: "Queued",   color: "var(--blue)",   bg: "var(--blue-glow)" },
-  scanning: { label: "Scanning", color: "var(--blue)",   bg: "var(--blue-glow)" },
-  scanned:  { label: "Scanned",  color: "var(--green)",  bg: "rgba(52,211,153,0.1)" },
-  emailed:  { label: "Emailed",  color: "var(--accent)", bg: "rgba(251,191,36,0.1)" },
-  skipped:  { label: "Skipped",  color: "var(--ink3)",   bg: "var(--surface)" },
+  new: { label: "New", color: "var(--blue)", bg: "var(--blue-glow)" },
+  pending: { label: "Unscanned",color: "var(--ink3)", bg: "var(--surface)" },
+  queued: { label: "Queued", color: "#f59e0b", bg: "rgba(245,158,11,0.1)" },
+  scanning: { label: "Scanning", color: "var(--blue)", bg: "var(--blue-glow)" },
+  scanned: { label: "Scanned", color: "var(--green)", bg: "rgba(52,211,153,0.1)" },
+  emailed: { label: "Emailed", color: "var(--accent)", bg: "rgba(251,191,36,0.1)" },
+  skipped: { label: "Skipped", color: "var(--ink3)", bg: "var(--surface)" },
 };
 
 export default function StatusBadge({ status }) {

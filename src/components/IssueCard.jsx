@@ -3,14 +3,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 
 const SEV_META = {
-  high:   { label: "High",   cls: "sev-counts__item--high",   bar: "var(--red)",    glow: "rgba(248,113,113,0.15)" },
+  high: { label: "High", cls: "sev-counts__item--high", bar: "var(--red)", glow: "rgba(248,113,113,0.15)" },
   medium: { label: "Medium", cls: "sev-counts__item--medium", bar: "var(--yellow)", glow: "rgba(251,191,36,0.12)" },
-  low:    { label: "Low",    cls: "sev-counts__item--low",    bar: "var(--green)",  glow: "rgba(52,211,153,0.1)" },
+  low: { label: "Low", cls: "sev-counts__item--low", bar: "var(--green)", glow: "rgba(52,211,153,0.1)" },
 };
 
 export default function IssueCard({ issue, defaultOpen = false, index = 0, checked, onCheckedChange }) {
   const [open, setOpen] = useState(defaultOpen);
-  const sev  = SEV_META[issue.severity] || SEV_META.low;
+  const sev = SEV_META[issue.severity] || SEV_META.low;
   const type = (issue.type || "unknown").replace(/_/g, " ");
   const hasCheckbox = checked !== undefined && onCheckedChange;
 

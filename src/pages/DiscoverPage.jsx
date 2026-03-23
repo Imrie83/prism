@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { useDiscoverStore } from "../stores/discoverStore";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search, MapPin, ScanLine, ExternalLink, Trash2,
-  ChevronDown, ChevronUp, RefreshCw, AlertCircle, Inbox,
+  RefreshCw, AlertCircle, Inbox,
   Globe, Star, CheckCircle, Filter, CheckSquare, Square,
   Bookmark, X,
 } from "lucide-react";
@@ -29,7 +29,7 @@ function RatingStars({ rating }) {
 
 
 const LIMIT_OPTIONS = [
-  { label: "60",  value: 60 },
+  { label: "60", value: 60 },
   { label: "120", value: 120 },
   { label: "200", value: 200 },
   { label: "All", value: 0 },
@@ -45,38 +45,38 @@ export default function DiscoverPage() {
 
   // All transient state lives in discoverStore so it survives tab switches
   const ds = useDiscoverStore();
-  const keywords       = ds.keywords;
-  const location       = ds.location;
-  const limit          = ds.limit;
-  const searching      = ds.searching;
-  const searchError    = ds.searchError;
-  const searchStats    = ds.searchStats;
+  const keywords = ds.keywords;
+  const location = ds.location;
+  const limit = ds.limit;
+  const searching = ds.searching;
+  const searchError = ds.searchError;
+  const searchStats = ds.searchStats;
   const searchProgress = ds.searchProgress;
-  const sessions       = ds.sessions;
-  const activeSession  = ds.activeSession;
-  const records        = ds.records;
-  const loading        = ds.loading;
-  const page           = ds.page;
-  const showFilters    = ds.showFilters;
+  const sessions = ds.sessions;
+  const activeSession = ds.activeSession;
+  const records = ds.records;
+  const loading = ds.loading;
+  const page = ds.page;
+  const showFilters = ds.showFilters;
   const showSuggestions = ds.showSuggestions;
 
-  const setKeywords        = (v) => ds.setField("keywords", v);
-  const setLocation        = (v) => ds.setField("location", v);
-  const setLimit           = (v) => ds.setField("limit", v);
-  const setSearching       = (v) => ds.setField("searching", v);
-  const setSearchError     = (v) => ds.setField("searchError", v);
-  const setSearchStats     = (v) => ds.setField("searchStats", v);
-  const setSearchProgress  = (v) => ds.setField("searchProgress", v);
-  const setSessions        = (v) => ds.setField("sessions", v);
-  const setActiveSession   = (v) => ds.setField("activeSession", v);
-  const setRecords         = (v) => ds.setField("records", typeof v === "function" ? v(records) : v);
-  const setLoading         = (v) => ds.setField("loading", v);
-  const setPage            = (v) => ds.setField("page", typeof v === "function" ? v(page) : v);
-  const setShowFilters     = (v) => ds.setField("showFilters", typeof v === "function" ? v(showFilters) : v);
+  const setKeywords = (v) => ds.setField("keywords", v);
+  const setLocation = (v) => ds.setField("location", v);
+  const setLimit = (v) => ds.setField("limit", v);
+  const setSearching = (v) => ds.setField("searching", v);
+  const setSearchError = (v) => ds.setField("searchError", v);
+  const setSearchStats = (v) => ds.setField("searchStats", v);
+  const setSearchProgress = (v) => ds.setField("searchProgress", v);
+  const setSessions = (v) => ds.setField("sessions", v);
+  const setActiveSession = (v) => ds.setField("activeSession", v);
+  const setRecords = (v) => ds.setField("records", typeof v === "function" ? v(records) : v);
+  const setLoading = (v) => ds.setField("loading", v);
+  const setPage = (v) => ds.setField("page", typeof v === "function" ? v(page) : v);
+  const setShowFilters = (v) => ds.setField("showFilters", typeof v === "function" ? v(showFilters) : v);
   const setShowSuggestions = (v) => ds.setField("showSuggestions", v);
 
   // Selected is stored as array in store, expose as Set for compatibility
-  const selected    = new Set(ds.selected);
+  const selected = new Set(ds.selected);
   const setSelected = (setOrFn) => {
     if (typeof setOrFn === "function") {
       const next = setOrFn(new Set(ds.selected));
@@ -87,23 +87,23 @@ export default function DiscoverPage() {
   };
 
   // Sort / filter / pagination — persisted via settingsStore
-  const sortBy         = settings.discoverSortBy;
-  const sortDir        = settings.discoverSortDir;
-  const filterStatus   = settings.discoverFilterStatus;
+  const sortBy = settings.discoverSortBy;
+  const sortDir = settings.discoverSortDir;
+  const filterStatus = settings.discoverFilterStatus;
   const filterHasEmail = settings.discoverFilterHasEmail;
-  const perPage        = settings.discoverPerPage;
-  const setSortBy      = (v) => settings.setField("discoverSortBy", v);
-  const setSortDir     = (v) => settings.setField("discoverSortDir", v);
-  const setFilterStatus    = (v) => settings.setField("discoverFilterStatus", v);
-  const setFilterHasEmail  = (v) => settings.setField("discoverFilterHasEmail", v);
-  const setPerPage         = (v) => settings.setField("discoverPerPage", v);
+  const perPage = settings.discoverPerPage;
+  const setSortBy = (v) => settings.setField("discoverSortBy", v);
+  const setSortDir = (v) => settings.setField("discoverSortDir", v);
+  const setFilterStatus = (v) => settings.setField("discoverFilterStatus", v);
+  const setFilterHasEmail = (v) => settings.setField("discoverFilterHasEmail", v);
+  const setPerPage = (v) => settings.setField("discoverPerPage", v);
 
   // Local-only UI refs (don't need to survive tab switch)
   const keywordsRef = useRef(null);
 
   // Saved searches helpers
   const savedSearches = settings.savedSearches || [];
-  const usedKeywords  = settings.usedKeywords  || [];
+  const usedKeywords = settings.usedKeywords || [];
 
   const isCurrentSaved = savedSearches.some(
     s => s.keywords === keywords.trim() && s.location === location.trim()
@@ -149,7 +149,7 @@ export default function DiscoverPage() {
     : [];
 
   // scanningUrl lives in store so scan-in-progress indicator survives tab switch
-  const scanningUrl    = ds.scanningUrl || null;
+  const scanningUrl = ds.scanningUrl || null;
   const setScanningUrl = (v) => ds.setField("scanningUrl", v);
 
 
@@ -198,9 +198,9 @@ export default function DiscoverPage() {
         useDiscoverStore.getState().setField("searchProgress", (() => {
           const p = useDiscoverStore.getState().searchProgress || { scrolled: 0, detailed: 0, total: 0, withWebsite: 0, keyword: "" };
           if (event.type === "keyword_start") return { ...p, phase: "scrolling", keyword: event.keyword, scrolled: 0 };
-          if (event.type === "scroll")        return { ...p, phase: "scrolling", scrolled: event.count, keyword: event.keyword };
-          if (event.type === "detail")        return { ...p, phase: "details", detailed: event.index, total: event.total, withWebsite: p.withWebsite + (event.website ? 1 : 0), keyword: event.keyword, lastName: event.name };
-          if (event.type === "keyword_done")  return { ...p, phase: "done_keyword" };
+          if (event.type === "scroll") return { ...p, phase: "scrolling", scrolled: event.count, keyword: event.keyword };
+          if (event.type === "detail") return { ...p, phase: "details", detailed: event.index, total: event.total, withWebsite: p.withWebsite + (event.website ? 1 : 0), keyword: event.keyword, lastName: event.name };
+          if (event.type === "keyword_done") return { ...p, phase: "done_keyword" };
           return p;
         })());
       });
@@ -218,16 +218,15 @@ export default function DiscoverPage() {
 
   async function scanProspect(record) {
     const url = record.website;
-    if (!url || scanningUrl) return;
+    if (!url) return;
 
     setScanningUrl(url);
     await api.updateProspectStatus(url, "scanning");
-    setRecords(rs => rs.map(r => r.website === url ? { ...r, status: "scanning" } : r));
+    ds.updateRecord(url, { status: "scanning" });
 
     try {
       const result = await api.analyzePage(url, getScanSettings(), `discover-${Date.now()}`, null, "shallow", settings.visionMode);
 
-      // Update prospect with email if found
       const foundEmail = result.emails_found?.[0];
       const emailToUse = record.email || foundEmail || (() => {
         try { return `info@${new URL(url).hostname.replace(/^www\./, "")}`; } catch { return null; }
@@ -237,26 +236,20 @@ export default function DiscoverPage() {
         await api.updateProspectEmail(url, emailToUse);
       }
 
-      // Push into scan store
+      // Register in scan store WITHOUT switching to results tab
       const runId = scanStore.startShallow(url);
-      scanStore.finishShallow(runId, result);
+      scanStore.finishShallowSilent(runId, result);
 
-      // Set recipient in email store
       if (emailToUse) emailStore.setRecipient(url, emailToUse);
-
-      // Auto-generate email if toggle on
       if (settings.autoGenerateEmail) {
         emailStore.generate(url, result, getEmailSettings());
       }
 
       await api.updateProspectStatus(url, "scanned");
-      setRecords(rs => rs.map(r => r.website === url
-        ? { ...r, status: "scanned", email: emailToUse || r.email }
-        : r
-      ));
+      ds.updateRecord(url, { status: "scanned", email: emailToUse || record.email });
     } catch (e) {
       await api.updateProspectStatus(url, "new");
-      setRecords(rs => rs.map(r => r.website === url ? { ...r, status: "new" } : r));
+      ds.updateRecord(url, { status: "new" });
       console.error("scan failed:", e);
     } finally {
       setScanningUrl(null);
@@ -264,9 +257,18 @@ export default function DiscoverPage() {
   }
 
   async function scanSelected() {
-    const toScan = records.filter(r => selected.has(r.website) && r.status === "new" && r.website);
-    for (const r of toScan) await scanProspect(r);
+    // Mark all selected new records as queued immediately so user sees the queue
+    const toScan = records.filter(r => selected.has(r.website) && ["new", "pending"].includes(r.status) && r.website);
+    for (const r of toScan) {
+      await api.updateProspectStatus(r.website, "queued");
+      ds.updateRecord(r.website, { status: "queued" });
+    }
     setSelected(new Set());
+
+    // Process sequentially — each item moves scanning → scanned as it's processed
+    for (const r of toScan) {
+      await scanProspect({ ...r, status: "queued" });
+    }
   }
 
   async function deleteSelected() {
@@ -311,11 +313,12 @@ export default function DiscoverPage() {
 
   const hasFilters = filterStatus !== "all" || filterHasEmail !== "all";
   const newCount = records.filter(r => r.status === "new").length;
+  const unscannedCount = records.filter(r => ["new", "pending", "queued"].includes(r.status)).length;
 
   // Pagination
   const totalPages = perPage === 0 ? 1 : Math.ceil(records.length / perPage);
-  const paginated  = perPage === 0 ? records : records.slice((page - 1) * perPage, page * perPage);
-  const pageUrls   = paginated.map(r => r.website).filter(Boolean);
+  const paginated = perPage === 0 ? records : records.slice((page - 1) * perPage, page * perPage);
+  const pageUrls = paginated.map(r => r.website).filter(Boolean);
   const allPageSelected = pageUrls.length > 0 && pageUrls.every(u => selected.has(u));
 
   return (
@@ -498,15 +501,15 @@ export default function DiscoverPage() {
                 <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                   <div className="spinner" style={{ width: 15, height: 15, borderWidth: 2, flexShrink: 0 }} />
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {searchProgress.phase === "starting"     && "Connecting to Google Maps…"}
-                    {searchProgress.phase === "scrolling"    && `Loading results for "${searchProgress.keyword}"`}
-                    {searchProgress.phase === "details"      && `Getting details — "${searchProgress.keyword}"`}
+                    {searchProgress.phase === "starting" && "Connecting to Google Maps…"}
+                    {searchProgress.phase === "scrolling" && `Loading results for "${searchProgress.keyword}"`}
+                    {searchProgress.phase === "details" && `Getting details — "${searchProgress.keyword}"`}
                     {searchProgress.phase === "done_keyword" && "Moving to next keyword…"}
                   </span>
                 </div>
                 <span style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--blue)", fontWeight: 700, flexShrink: 0, marginLeft: 16 }}>
                   {searchProgress.phase === "scrolling" && `${searchProgress.scrolled} found`}
-                  {searchProgress.phase === "details"   && `${searchProgress.detailed} / ${searchProgress.total}`}
+                  {searchProgress.phase === "details" && `${searchProgress.detailed} / ${searchProgress.total}`}
                 </span>
               </div>
 
@@ -609,7 +612,7 @@ export default function DiscoverPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
               <span style={{ fontSize: 12, color: "var(--ink3)" }}>
                 {records.length} prospect{records.length !== 1 ? "s" : ""}
-                {newCount > 0 && <span style={{ color: "var(--blue)", marginLeft: 6 }}>{newCount} unscanned</span>}
+                {unscannedCount > 0 && <span style={{ color: "var(--blue)", marginLeft: 6 }}>{unscannedCount} unscanned</span>}
               </span>
 
               {/* Bulk actions */}
@@ -671,6 +674,8 @@ export default function DiscoverPage() {
                         style={{ fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg3)", color: "var(--ink2)" }}>
                         <option value="all">All</option>
                         <option value="new">New</option>
+                        <option value="pending">Unscanned</option>
+                        <option value="queued">Queued</option>
                         <option value="scanned">Scanned</option>
                         <option value="emailed">Emailed</option>
                         <option value="skipped">Skipped</option>
@@ -718,12 +723,12 @@ export default function DiscoverPage() {
                       ? <CheckSquare size={13} style={{ color: "var(--blue)" }} />
                       : <Square size={13} style={{ color: "var(--ink3)" }} />}
                   </div>
-                  <SortHeader label="Business" field="name"   sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
-                  <SortHeader label="Rating"   field="rating" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                  <SortHeader label="Business" field="name" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                  <SortHeader label="Rating" field="rating" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                   <span style={{ color: "var(--ink3)" }}>Category</span>
                   <span style={{ color: "var(--ink3)" }}>Email</span>
                   <span style={{ color: "var(--ink3)" }}>Website</span>
-                  <SortHeader label="Status"   field="status" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                  <SortHeader label="Status" field="status" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                   <span style={{ color: "var(--ink3)" }}>Actions</span>
                 </div>
 
@@ -807,7 +812,7 @@ export default function DiscoverPage() {
 
                         {/* Actions — right-aligned, consistent padding */}
                         <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
-                          {rec.website && rec.status === "new" && (
+                          {rec.website && ["new", "pending"].includes(rec.status) && (
                             <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}
                               className="btn btn--sm btn--primary"
                               onClick={() => scanProspect(rec)}
@@ -819,7 +824,55 @@ export default function DiscoverPage() {
                           {rec.status === "scanned" && (
                             <motion.button whileHover={{ scale: 1.08 }}
                               className="btn btn--sm btn--ghost"
-                              onClick={() => scanStore.setActiveTab("results")}
+                              onClick={async () => {
+                                try {
+                                  const full = await api.getHistoryEntry(rec.website);
+                                  const result = {
+                                    url: full.url,
+                                    score: full.score,
+                                    title: full.title,
+                                    summary: full.summary,
+                                    totalIssues: full.total_issues,
+                                    issueCounts: full.issue_counts,
+                                    issues: full.issues || [],
+                                    screenshot: full.screenshot_b64,
+                                    scan_mode: full.scan_mode,
+                                    emails_found: full.emails_found || (rec.email ? [rec.email] : []),
+                                    _fromHistory: true,
+                                  };
+                                  // Patch email store BEFORE finishShallow — finishShallow switches
+                                  // tabs which opens the drawer, and the useEffect in EmailDrawer
+                                  // reads the store immediately on open. Must be set first.
+                                  const patch = { ...(useEmailStore.getState().emails[full.url] || {}) };
+                                  if (full.email) {
+                                    if (full.email.recipient) patch.recipientEmail = full.email.recipient;
+                                    if (full.email.subject) patch.subject = full.email.subject;
+                                    if (full.email.html) patch.htmlContent = full.email.html;
+                                    if (full.email.sent_at) patch.sentAt = full.email.sent_at;
+                                    patch.status = full.email.sent_at ? "sent" : full.email.html ? "ready" : undefined;
+                                  }
+                                  if (!patch.recipientEmail) {
+                                    // Priority: prospect email (saved during scan) →
+                                    // emails_found in DB (newer scans only) → info@domain
+                                    let recipient = rec.email
+                                      || (full.emails_found || [])[0];
+                                    if (!recipient) {
+                                      try {
+                                        const domain = new URL(full.url).hostname.replace(/^www\./, "");
+                                        recipient = `info@${domain}`;
+                                      } catch {}
+                                    }
+                                    if (recipient) patch.recipientEmail = recipient;
+                                  }
+                                  if (Object.keys(patch).length > 0) {
+                                    useEmailStore.setState(s => ({ emails: { ...s.emails, [full.url]: patch } }));
+                                  }
+                                  const runId = scanStore.startShallow(full.url);
+                                  scanStore.finishShallow(runId, result);
+                                } catch (e) {
+                                  console.error("failed to load scan:", e);
+                                }
+                              }}
                               title="View results">
                               <CheckCircle size={12} style={{ color: "var(--green)" }} />
                             </motion.button>

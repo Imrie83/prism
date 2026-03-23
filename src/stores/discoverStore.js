@@ -17,7 +17,7 @@ export const useDiscoverStore = create((set, get) => ({
   searching: false,
   searchError: null,
   searchStats: null,
-  searchProgress: null,   // { phase, scrolled, detailed, total, withWebsite, keyword, lastName }
+  searchProgress: null, 
 
   // Sessions
   sessions: [],
@@ -31,7 +31,7 @@ export const useDiscoverStore = create((set, get) => ({
   page: 1,
 
   // Selection — intentionally kept in store so it survives tab switch too
-  selected: [],   // array of website URLs (Set can't be stored in Zustand easily)
+  selected: [], // array of website URLs (Set can't be stored in Zustand easily)
 
   // Scan in-progress
   scanningUrl: null,

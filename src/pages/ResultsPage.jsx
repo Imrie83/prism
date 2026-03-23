@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, ExternalLink, Mail, TrendingDown, Clock, ChevronDown } from "lucide-react";
+import { Bot, ExternalLink, Mail, TrendingDown } from "lucide-react";
 import { useScanStore } from "../stores/scanStore";
 import { useAgentStore } from "../stores/agentStore";
 import { useEmailStore } from "../stores/emailStore";
@@ -17,7 +17,7 @@ function scoreColor(s) {
 
 function SevCounts({ counts, totalIssues }) {
   if (!counts) return null;
-  const shown = (counts.high||0) + (counts.medium||0) + (counts.low||0);
+  const shown = (counts.high || 0) + (counts.medium || 0) + (counts.low || 0);
   const hiddenCount = totalIssues && totalIssues > shown ? totalIssues - shown : 0;
   return (
     <div className="sev-counts">
@@ -230,7 +230,7 @@ function ShallowView({ onLightbox }) {
       )}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <h2 style={{ fontSize: 13, fontWeight: 600, color: "var(--ink2)" }}>
               {result.issues?.length ?? 0} issue{result.issues?.length !== 1 ? "s" : ""} found
             </h2>
@@ -463,8 +463,8 @@ function Scanning() {
 function ModeTabs({ active, onSelect, shallowCount, deepCount, batchCount }) {
   const tabs = [
     { id: "shallow", label: "Single", count: shallowCount },
-    { id: "deep",    label: "Deep",   count: deepCount },
-    { id: "batch",   label: "Batch",  count: batchCount },
+    { id: "deep", label: "Deep", count: deepCount },
+    { id: "batch", label: "Batch", count: batchCount },
   ];
   return (
     <div style={{ display: "flex", gap: 0, marginBottom: 24, borderBottom: "1px solid var(--border)" }}>
@@ -556,8 +556,8 @@ export default function ResultsPage() {
               initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.15 }}>
               {viewMode === "shallow" && <ShallowView onLightbox={(s, u) => setLightbox({ src: s, url: u })} />}
-              {viewMode === "deep"    && <DeepView    onLightbox={(s, u) => setLightbox({ src: s, url: u })} />}
-              {viewMode === "batch"   && <BatchView   onLightbox={(s, u) => setLightbox({ src: s, url: u })} onAutoFollow={autoFollowEmail} />}
+              {viewMode === "deep" && <DeepView onLightbox={(s, u) => setLightbox({ src: s, url: u })} />}
+              {viewMode === "batch" && <BatchView onLightbox={(s, u) => setLightbox({ src: s, url: u })} onAutoFollow={autoFollowEmail} />}
             </motion.div>
           </AnimatePresence>
 

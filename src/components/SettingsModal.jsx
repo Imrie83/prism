@@ -281,7 +281,7 @@ export default function SettingsModal({ onClose }) {
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                 {testResult.success
                   ? <CheckCircle size={14} style={{ color: "var(--green)" }} />
-                  : <XCircle    size={14} style={{ color: "var(--red)"   }} />}
+                  : <XCircle size={14} style={{ color: "var(--red)" }} />}
                 <strong style={{ color: testResult.success ? "var(--green)" : "var(--red)" }}>
                   {testResult.success ? "Connection OK" : "Connection failed"}
                 </strong>

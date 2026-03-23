@@ -14,14 +14,14 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 export default function PaginationFooter({ page, totalPages, total, perPage, onPage }) {
   if (totalPages <= 1) return null;
 
-  const from = perPage === 0 ? 1      : (page - 1) * perPage + 1;
-  const to   = perPage === 0 ? total  : Math.min(page * perPage, total);
+  const from = perPage === 0 ? 1 : (page - 1) * perPage + 1;
+  const to = perPage === 0 ? total : Math.min(page * perPage, total);
 
   // Build page number array (max 7 visible, windowed around current)
   const pageNumbers = Array.from({ length: Math.min(totalPages, 7) }, (_, idx) => {
-    if (totalPages <= 7)          return idx + 1;
-    if (page <= 4)                return idx + 1;
-    if (page >= totalPages - 3)   return totalPages - 6 + idx;
+    if (totalPages <= 7) return idx + 1;
+    if (page <= 4) return idx + 1;
+    if (page >= totalPages - 3) return totalPages - 6 + idx;
     return page - 3 + idx;
   });
 

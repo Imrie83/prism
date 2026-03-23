@@ -238,14 +238,14 @@ STRUCTURE — follow this arc precisely:
 3. One SPECIFIC genuine compliment about their site — drawn from what you know about it
 4. ONE specific concrete observation: what a typical international visitor currently cannot do or find
 5. Mention that we offer both localisation AND full web development
-6. Reference the personalised report in ONE sentence: what it contains and where to find it
+6. Reference the personalised audit report in ONE sentence: explain that it is embedded directly below in this email — they do not need to go anywhere to see it
 7. Single clear ask: one specific question or invitation — make it easy to say yes
 
 VARIATION — every email must feel different. Do NOT use the same sentence structure twice. Vary:
 - The compliment angle: product/service, visual design, specialist depth, clear local identity
 - The missed opportunity framing: international bookings, research-phase travellers, expat communities
 - The services mentioned: choose 2-3 most relevant
-- The closing ask: "would you be open to a quick look?", "I'd be happy to answer any questions", direct invitation
+- The closing ask: "would you be open to a quick chat?", "I'd be happy to answer any questions", "does this sound like something worth exploring?" — never ask them to "visit" a URL or website
 
 CONTENT RULES:
 - jp_paragraphs: 3-4 short paragraphs in natural Japanese business Keigo. Do NOT include 御担当者様 — it is added automatically.

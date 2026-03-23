@@ -27,9 +27,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from .ai_client import call_ai, call_ollama, call_openai, call_claude, call_ollama_chat, _extract_json
-from .db import scans_db, ScanRecord, upsert_scan
+from .db import upsert_scan
 from .models import (
-    AISettings, AnalyzeRequest, CrawlRequest, AgentChatRequest,
+    AnalyzeRequest, CrawlRequest, AgentChatRequest,
 )
 from .prompts import build_audit_system_prompt, build_audit_user_prompt, AGENT_SYSTEM
 from .routes_history import router as history_router
@@ -216,15 +216,20 @@ async def _do_analyze(req: AnalyzeRequest, cancel_event: asyncio.Event | None = 
     if cancel_event and cancel_event.is_set():
         raise asyncio.CancelledError()
 
+    # Always use the server-side screenshot service URL from the environment.
+    # The client-supplied settings.screenshot_service_url is for the UI's own
+    # health checks (localhost:3000) and must not be used for server-to-server calls.
+    screenshot_svc = os.environ.get("SCREENSHOT_SERVICE_URL", req.settings.screenshot_service_url)
+
     t1                                   = time.monotonic()
-    screenshot_b64, html, page_height    = await take_screenshot(req.url, req.settings.screenshot_service_url)
+    screenshot_b64, html, page_height    = await take_screenshot(req.url, screenshot_svc)
     print(f"[analyze]   ✓ screenshot done in {time.monotonic()-t1:.1f}s | html={len(html)} chars | image={len(screenshot_b64)//1024}KB | pageHeight={page_height}px")
 
     images: list[str] = [screenshot_b64]
     if vision and page_height > 7999:
         print(f"[analyze]   → page tall ({page_height}px), taking second screenshot from y=7999...")
         t1b         = time.monotonic()
-        screenshot2 = await take_screenshot_offset(req.url, req.settings.screenshot_service_url, 7999)
+        screenshot2 = await take_screenshot_offset(req.url, screenshot_svc, 7999)
         if screenshot2:
             images.append(screenshot2)
             print(f"[analyze]   ✓ second screenshot done in {time.monotonic()-t1b:.1f}s | {len(screenshot2)//1024}KB")

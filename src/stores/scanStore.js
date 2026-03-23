@@ -23,9 +23,9 @@ function avgScore(pages) {
 
 export const useScanStore = create((set, get) => ({
   // Active scan state
-  status: "idle",           // "idle" | "scanning" | "done" | "error"
-  activeMode: "shallow",    // current UI mode selector
-  activeScanId: null,       // runId currently scanning
+  status: "idle", // "idle" | "scanning" | "done" | "error"
+  activeMode: "shallow", // current UI mode selector
+  activeScanId: null, // runId currently scanning
   error: null,
 
   // History banks
@@ -35,21 +35,21 @@ export const useScanStore = create((set, get) => ({
 
   // Active tab in results view per mode
   shallowActiveRun: null,
-  deepActiveRun:    null,
-  batchActiveRun:   null,
+  deepActiveRun: null,
+  batchActiveRun: null,
 
   // UI tab
   activeTab: "scan",
 
   // ── Selectors ──────────────────────────────────────────────────
   getShallowRun: (id) => get().shallowHistory.find(r => r.runId === id) || get().shallowHistory[0] || null,
-  getDeepRun:    (id) => get().deepHistory.find(r => r.runId === id)    || get().deepHistory[0]    || null,
-  getBatchRun:   (id) => get().batchHistory.find(r => r.runId === id)   || get().batchHistory[0]   || null,
+  getDeepRun: (id) => get().deepHistory.find(r => r.runId === id) || get().deepHistory[0] || null,
+  getBatchRun: (id) => get().batchHistory.find(r => r.runId === id) || get().batchHistory[0] || null,
 
   // Latest run per mode (for Results page default view)
   latestShallow: () => get().shallowHistory[0] || null,
-  latestDeep:    () => get().deepHistory[0]    || null,
-  latestBatch:   () => get().batchHistory[0]   || null,
+  latestDeep: () => get().deepHistory[0] || null,
+  latestBatch: () => get().batchHistory[0] || null,
 
   hasAnyResults: () => {
     const s = get();
@@ -81,6 +81,17 @@ export const useScanStore = create((set, get) => ({
     ),
     shallowActiveRun: runId,
     activeTab: "results",
+  })),
+
+  // Like finishShallow but does NOT switch the active tab — used when scanning
+  // is triggered from a page other than Scan (e.g. Discover)
+  finishShallowSilent: (runId, result) => set(s => ({
+    status: "done",
+    activeScanId: null,
+    shallowHistory: s.shallowHistory.map(r =>
+      r.runId === runId ? { ...r, result } : r
+    ),
+    shallowActiveRun: runId,
   })),
 
   // ── Deep scan ───────────────────────────────────────────────────
@@ -170,8 +181,8 @@ export const useScanStore = create((set, get) => ({
 
   // Set active displayed run per mode
   setShallowActiveRun: (id) => set({ shallowActiveRun: id }),
-  setDeepActiveRun:    (id) => set({ deepActiveRun: id }),
-  setBatchActiveRun:   (id) => set({ batchActiveRun: id }),
+  setDeepActiveRun: (id) => set({ deepActiveRun: id }),
+  setBatchActiveRun: (id) => set({ batchActiveRun: id }),
 
   // Remove a run from history
   removeShallowRun: (id) => set(s => {

@@ -46,7 +46,7 @@ export const useEmailStore = create((set, get) => ({
       set(s => {
         const existing = s.emails[url] || {};
         const prevTokens = existing.tokensTotal || null;
-        const newTokens  = data._tokens || null;
+        const newTokens = data._tokens || null;
 
         // Accumulate tokens across re-generations
         const accumulated = (() => {
@@ -54,10 +54,10 @@ export const useEmailStore = create((set, get) => ({
           if (!prevTokens) return { ...newTokens, generationCount: 1 };
           return {
             ...newTokens,
-            prompt_tokens:     (prevTokens.prompt_tokens     || 0) + (newTokens.prompt_tokens     || 0),
+            prompt_tokens: (prevTokens.prompt_tokens || 0) + (newTokens.prompt_tokens || 0),
             completion_tokens: (prevTokens.completion_tokens || 0) + (newTokens.completion_tokens || 0),
-            total_tokens:      (prevTokens.total_tokens      || 0) + (newTokens.total_tokens      || 0),
-            generationCount:   (prevTokens.generationCount   || 1) + 1,
+            total_tokens: (prevTokens.total_tokens || 0) + (newTokens.total_tokens || 0),
+            generationCount: (prevTokens.generationCount || 1) + 1,
           };
         })();
 
@@ -69,8 +69,8 @@ export const useEmailStore = create((set, get) => ({
               status: "ready",
               subject: data.subject,
               htmlContent: data.html,
-              tokensLast:  newTokens,    // last generation only
-              tokensTotal: accumulated,  // cumulative
+              tokensLast: newTokens, // last generation only
+              tokensTotal: accumulated, // cumulative
             },
           },
         };

@@ -60,6 +60,7 @@ def upsert_scan(data: dict) -> None:
     existing    = scans_db.get(ScanRecord.url == url)
     email_block = existing.get("email") if existing else None
     record = {
+        "emails_found": data.get("emails_found", []),
         "url":          url,
         "scan_mode":    data.get("scan_mode", "shallow"),
         "score":        data.get("score", 0),

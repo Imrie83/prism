@@ -10,7 +10,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from .db import scans_db, prospects_db, ScanRecord, ProspectRecord
+from .db import scans_db, prospects_db, ProspectRecord
 from .models import DiscoverSearchRequest
 
 router = APIRouter()
@@ -51,6 +51,12 @@ async def discover_search(req: DiscoverSearchRequest):
                             continue
 
                         if event.get("type") == "done":
+                            # Demote existing "new" records from other sessions to "pending"
+                            # so only the current session's results show as "New"
+                            prospects_db.update(
+                                {"status": "pending"},
+                                (ProspectRecord.status == "new") & (ProspectRecord.session_id != session_id)
+                            )
                             for biz in event.get("businesses", []):
                                 website = (biz.get("website") or "").strip()
                                 if not website:
@@ -144,6 +150,15 @@ async def get_sessions():
         if r.get("status") in ("scanned", "emailed"):
             sessions[sid]["scanned"] += 1
     return {"sessions": sorted(sessions.values(), key=lambda s: s["discovered_at"], reverse=True)}
+
+
+@router.get("/api/discover/prospect")
+async def get_prospect(website: str):
+    """Look up a single prospect by website URL."""
+    record = prospects_db.get(ProspectRecord.website == website)
+    if not record:
+        return {"record": None}
+    return {"record": record}
 
 
 @router.patch("/api/discover/status")

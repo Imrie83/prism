@@ -16,9 +16,9 @@ import { useAgentStore } from "./stores/agentStore";
 const VERSION = __APP_VERSION__;
 
 const TAB_TITLES = {
-  scan:     "New Audit",
-  results:  "Results",
-  history:  "Outreach History",
+  scan: "New Audit",
+  results: "Results",
+  history: "Outreach History",
   discover: "Discover",
 };
 
@@ -58,7 +58,7 @@ export default function App() {
     setDarkMode(d => {
       const next = !d;
       if (next) { document.body.classList.remove("light"); localStorage.setItem("prism-theme", "dark"); }
-      else       { document.body.classList.add("light");    localStorage.setItem("prism-theme", "light"); }
+      else { document.body.classList.add("light"); localStorage.setItem("prism-theme", "light"); }
       return next;
     });
   }
@@ -105,9 +105,9 @@ export default function App() {
             initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.16 }}
             style={{ flex: 1 }}>
-            {activeTab === "scan"     && <ScanPage />}
-            {activeTab === "results"  && <ResultsPage />}
-            {activeTab === "history"  && <HistoryPage />}
+            {activeTab === "scan" && <ScanPage />}
+            {activeTab === "results" && <ResultsPage />}
+            {activeTab === "history" && <HistoryPage />}
             {activeTab === "discover" && <DiscoverPage />}
           </motion.div>
         </AnimatePresence>

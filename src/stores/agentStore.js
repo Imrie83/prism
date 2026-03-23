@@ -1,8 +1,8 @@
 import { create } from "zustand";
 
-export const useAgentStore = create((set, get) => ({
-  messages: [],       // [{ role: "user"|"assistant", content: string }]
-  status: "idle",     // "idle" | "thinking"
+export const useAgentStore = create((set) => ({
+  messages: [], // [{ role: "user"|"assistant", content: string }]
+  status: "idle", // "idle" | "thinking"
   isOpen: false,
 
   setOpen: (open) => set({ isOpen: open }),

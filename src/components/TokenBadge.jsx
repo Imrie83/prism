@@ -3,32 +3,32 @@ import { Zap } from "lucide-react";
 import { useSettingsStore } from "../stores/settingsStore";
 
 function formatCost(usd) {
-  if (usd <= 0)    return null;
+  if (usd <= 0) return null;
   if (usd < 0.001) return "< $0.001";
-  if (usd < 0.01)  return `$${usd.toFixed(4)}`;
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
   return `$${usd.toFixed(3)}`;
 }
 
 export default function TokenBadge({ tokens, label = "", costType = "audit" }) {
   // costType: "audit" uses Haiku rates, "email" uses Sonnet rates
-  const auditIn   = useSettingsStore(s => s.auditInputCostPer1M);
-  const auditOut  = useSettingsStore(s => s.auditOutputCostPer1M);
-  const emailIn   = useSettingsStore(s => s.emailInputCostPer1M);
-  const emailOut  = useSettingsStore(s => s.emailOutputCostPer1M);
-  const inputCost  = costType === "email" ? emailIn  : auditIn;
+  const auditIn = useSettingsStore(s => s.auditInputCostPer1M);
+  const auditOut = useSettingsStore(s => s.auditOutputCostPer1M);
+  const emailIn = useSettingsStore(s => s.emailInputCostPer1M);
+  const emailOut = useSettingsStore(s => s.emailOutputCostPer1M);
+  const inputCost = costType === "email" ? emailIn : auditIn;
   const outputCost = costType === "email" ? emailOut : auditOut;
 
   if (!tokens?.total_tokens) return null;
 
-  const promptT     = tokens.prompt_tokens     ?? 0;
+  const promptT = tokens.prompt_tokens ?? 0;
   const completionT = tokens.completion_tokens ?? 0;
-  const total       = tokens.total_tokens;
-  const model       = tokens.model || "";
-  const genCount    = tokens.generationCount;
+  const total = tokens.total_tokens;
+  const model = tokens.model || "";
+  const genCount = tokens.generationCount;
 
-  const costUsd  = (promptT / 1_000_000) * inputCost + (completionT / 1_000_000) * outputCost;
+  const costUsd = (promptT / 1_000_000) * inputCost + (completionT / 1_000_000) * outputCost;
   const showCost = inputCost > 0 || outputCost > 0;
-  const cost     = showCost ? formatCost(costUsd) : null;
+  const cost = showCost ? formatCost(costUsd) : null;
 
   const tooltip = [
     genCount > 1 ? `${genCount} generations combined` : null,

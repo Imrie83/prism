@@ -5,11 +5,11 @@ import { useAgentStore } from "../stores/agentStore";
 import { useEmailStore } from "../stores/emailStore";
 
 const DOT_COLOR = {
-  queued:     "var(--ink3)",
+  queued: "var(--ink3)",
   generating: "var(--blue)",
-  ready:      "var(--green)",
-  error:      "var(--red)",
-  sent:       "var(--accent)",
+  ready: "var(--green)",
+  error: "var(--red)",
+  sent: "var(--accent)",
 };
 
 function EmailQueueStatus() {

@@ -30,6 +30,16 @@ logs-backend:
 shell-backend:
 	docker compose exec backend sh
 
+## Lint the backend via Ruff:
+lint-backend:
+	docker compose exec backend ruff check .
+	docker compose exec backend ruff format --check .
+
+## Format the backend via Ruff:
+format-backend:
+	docker compose exec backend ruff check --fix .
+	docker compose exec backend ruff format .
+
 ## Show running containers:
 ps:
 	docker compose ps

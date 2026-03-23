@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   RefreshCw, Trash2, Mail, MailCheck,
   CheckSquare, Square, ExternalLink, AlertCircle, Inbox,
-  ChevronUp, ChevronDown, Filter,
+  Filter,
 } from "lucide-react";
 import { api } from "../lib/api";
 import SortHeader from "../components/SortHeader";
@@ -45,9 +45,9 @@ function SevBadges({ counts }) {
   if (!counts) return <span style={{ color: "var(--ink3)", fontSize: 11 }}>—</span>;
   return (
     <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-      {counts.high   > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#dc2626" }}>▲{counts.high}</span>}
+      {counts.high > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#dc2626" }}>▲{counts.high}</span>}
       {counts.medium > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#d97706" }}>●{counts.medium}</span>}
-      {counts.low    > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#16a34a" }}>▼{counts.low}</span>}
+      {counts.low > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "#16a34a" }}>▼{counts.low}</span>}
     </span>
   );
 }
@@ -67,18 +67,18 @@ export default function HistoryPage() {
   const [deletingUrl, setDeletingUrl] = useState(null);
 
   // Sort state — persisted
-  const sortBy    = historySettings.historySortBy;
-  const sortDir   = historySettings.historySortDir;
-  const setSortBy    = (v) => historySettings.setField("historySortBy", v);
-  const setSortDir   = (v) => historySettings.setField("historySortDir", v);
+  const sortBy = historySettings.historySortBy;
+  const sortDir = historySettings.historySortDir;
+  const setSortBy = (v) => historySettings.setField("historySortBy", v);
+  const setSortDir = (v) => historySettings.setField("historySortDir", v);
 
   // Filter state — persisted
-  const filterEmail     = historySettings.historyFilterEmail;
-  const filterScoreMin  = historySettings.historyFilterScoreMin;
-  const filterScoreMax  = historySettings.historyFilterScoreMax;
-  const setFilterEmail     = (v) => historySettings.setField("historyFilterEmail", v);
-  const setFilterScoreMin  = (v) => historySettings.setField("historyFilterScoreMin", v);
-  const setFilterScoreMax  = (v) => historySettings.setField("historyFilterScoreMax", v);
+  const filterEmail = historySettings.historyFilterEmail;
+  const filterScoreMin = historySettings.historyFilterScoreMin;
+  const filterScoreMax = historySettings.historyFilterScoreMax;
+  const setFilterEmail = (v) => historySettings.setField("historyFilterEmail", v);
+  const setFilterScoreMin = (v) => historySettings.setField("historyFilterScoreMin", v);
+  const setFilterScoreMax = (v) => historySettings.setField("historyFilterScoreMax", v);
   const [showFilters, setShowFilters] = useState(false);
 
   const setActiveTab = useScanStore(s => s.setActiveTab);
@@ -152,15 +152,15 @@ export default function HistoryPage() {
     try {
       const full = await api.getHistoryEntry(record.url);
       const result = {
-        url:          full.url,
-        score:        full.score,
-        title:        full.title,
-        summary:      full.summary,
-        totalIssues:  full.total_issues,
-        issueCounts:  full.issue_counts,
-        issues:       full.issues || [],
-        screenshot:   full.screenshot_b64,
-        scan_mode:    full.scan_mode,
+        url: full.url,
+        score: full.score,
+        title: full.title,
+        summary: full.summary,
+        totalIssues: full.total_issues,
+        issueCounts: full.issue_counts,
+        issues: full.issues || [],
+        screenshot: full.screenshot_b64,
+        scan_mode: full.scan_mode,
         _fromHistory: true,
       };
       const runId = startShallow(full.url);
@@ -168,9 +168,9 @@ export default function HistoryPage() {
       if (full.email) {
         const emailPatch = { ...(useEmailStore.getState().emails[full.url] || {}) };
         if (full.email.recipient) emailPatch.recipientEmail = full.email.recipient;
-        if (full.email.subject)   emailPatch.subject        = full.email.subject;
-        if (full.email.html)      emailPatch.htmlContent    = full.email.html;
-        if (full.email.sent_at)   emailPatch.sentAt         = full.email.sent_at;
+        if (full.email.subject) emailPatch.subject = full.email.subject;
+        if (full.email.html) emailPatch.htmlContent = full.email.html;
+        if (full.email.sent_at) emailPatch.sentAt = full.email.sent_at;
         emailPatch.status = full.email.sent_at ? "sent" : full.email.html ? "ready" : undefined;
         useEmailStore.setState(s => ({ emails: { ...s.emails, [full.url]: emailPatch } }));
       }
@@ -303,10 +303,10 @@ export default function HistoryPage() {
             textTransform: "uppercase",
           }}>
             <span style={{ color: "var(--ink3)" }}>URL</span>
-            <SortHeader label="Score"  field="score"        sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ justifyContent: "center" }} />
+            <SortHeader label="Score" field="score" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ justifyContent: "center" }} />
             <span style={{ color: "var(--ink3)" }}>Severity</span>
             <SortHeader label="Issues" field="total_issues" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} style={{ justifyContent: "center" }} />
-            <SortHeader label="Scanned" field="scanned_at"  sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+            <SortHeader label="Scanned" field="scanned_at" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <SortHeader label="Email sent" field="email_sent" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <span style={{ color: "var(--ink3)" }}>Recipient</span>
             <span style={{ color: "var(--ink3)", textAlign: "center" }}>Reply</span>

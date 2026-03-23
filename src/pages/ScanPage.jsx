@@ -10,8 +10,8 @@ import { useAISettings } from "../hooks/useAISettings";
 
 const MODES = [
   { id: "shallow", label: "Shallow", icon: Search, desc: "Single page — full results + email generation" },
-  { id: "deep",    label: "Deep",    icon: Layers, desc: "Crawl all subpages — per-page + overall score" },
-  { id: "batch",   label: "Batch",   icon: List,   desc: "Multiple URLs — shallow scan each" },
+  { id: "deep", label: "Deep", icon: Layers, desc: "Crawl all subpages — per-page + overall score" },
+  { id: "batch", label: "Batch", icon: List, desc: "Multiple URLs — shallow scan each" },
 ];
 
 const MAX_RETRIES = 3;
@@ -35,9 +35,6 @@ export default function ScanPage() {
   const [historyBanner, setHistoryBanner] = useState(null);
 
   const isScanning = store.status === "scanning" || localScanning;
-
-
-
 
   // After a scan completes, optionally extract found emails + auto-generate email
   function handleScanResult(url, result) {
@@ -260,8 +257,8 @@ export default function ScanPage() {
 
     setHistoryBanner(null);
     if (store.activeMode === "shallow") return runShallow();
-    if (store.activeMode === "deep")    return runDeep();
-    if (store.activeMode === "batch")   return runBatch();
+    if (store.activeMode === "deep") return runDeep();
+    if (store.activeMode === "batch") return runBatch();
   }
 
   function handleScanAnyway() {
@@ -271,7 +268,7 @@ export default function ScanPage() {
   }
 
   const activeRun = (() => {
-    if (store.activeMode === "deep"  && store.deepHistory[0]?.status === "scanning")  return store.deepHistory[0];
+    if (store.activeMode === "deep" && store.deepHistory[0]?.status === "scanning") return store.deepHistory[0];
     if (store.activeMode === "batch" && store.batchHistory[0]?.status === "scanning") return store.batchHistory[0];
     return null;
   })();

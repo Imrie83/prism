@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
@@ -7,7 +7,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Wand2, Send, Copy, RefreshCw, Check, AlertCircle,
-  Clock, Zap, Mail, Eye, Edit3
+  Clock, Zap, Mail, Eye
 } from "lucide-react";
 import { useEmailStore } from "../stores/emailStore";
 import { useAISettings } from "../hooks/useAISettings";
@@ -38,18 +38,18 @@ function Toolbar({ editor }) {
 
 function StatusPill({ status }) {
   const map = {
-    queued:     { label: "Queued",     color: "var(--ink3)",  icon: <Clock size={10} /> },
-    generating: { label: "Generating", color: "var(--blue)",  icon: <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} style={{ display:"flex" }}><Zap size={10} /></motion.div> },
-    ready:      { label: "Ready",      color: "var(--green)", icon: <Check size={10} /> },
-    error:      { label: "Error",      color: "var(--red)",   icon: <AlertCircle size={10} /> },
-    sent:       { label: "Sent",       color: "var(--accent)",icon: <Mail size={10} /> },
+    queued: { label: "Queued", color: "var(--ink3)", icon: <Clock size={10} /> },
+    generating: { label: "Generating", color: "var(--blue)", icon: <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} style={{ display: "flex" }}><Zap size={10} /></motion.div> },
+    ready: { label: "Ready", color: "var(--green)", icon: <Check size={10} /> },
+    error: { label: "Error", color: "var(--red)", icon: <AlertCircle size={10} /> },
+    sent: { label: "Sent", color: "var(--accent)",icon: <Mail size={10} /> },
   };
   const s = map[status];
   if (!s) return null;
   return (
-    <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:11,
-      color:s.color, fontFamily:"var(--font-mono)", background:`${s.color}18`,
-      padding:"2px 8px", borderRadius:99, border:`1px solid ${s.color}30` }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11,
+      color: s.color, fontFamily: "var(--font-mono)", background: `${s.color}18`,
+      padding: "2px 8px", borderRadius: 99, border: `1px solid ${s.color}30` }}>
       {s.icon} {s.label}
     </span>
   );
@@ -69,20 +69,20 @@ function EmailPreview({ html }) {
 
   if (!html) {
     return (
-      <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center",
-        color:"var(--ink3)", fontSize:13, padding:24 }}>
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+        color: "var(--ink3)", fontSize: 13, padding: 24 }}>
         Generate an email to see the preview.
       </div>
     );
   }
 
   return (
-    <div style={{ flex:1, background:"#f8f9ff", borderRadius:"0 0 8px 8px", overflow:"hidden",
-      border:"1px solid var(--border)", borderTop:"none" }}>
+    <div style={{ flex: 1, background: "#f8f9ff", borderRadius: "0 0 8px 8px", overflow: "hidden",
+      border: "1px solid var(--border)", borderTop: "none" }}>
       <iframe
         ref={ref}
         title="Email preview"
-        style={{ width:"100%", height:"100%", border:"none", display:"block", minHeight:520 }}
+        style={{ width: "100%", height: "100%", border: "none", display: "block", minHeight: 520 }}
         sandbox="allow-same-origin"
       />
     </div>
@@ -128,6 +128,28 @@ export default function EmailDrawer() {
       if (drawerUrl) store.setHtmlContent(drawerUrl, editor.getHTML());
     },
   });
+
+  // Auto-fill recipient when drawer opens and none is set yet.
+  // Reads directly from store state (not the emailData closure) to avoid
+  // overwriting a recipient that was just set by scanProspect/handleScanResult.
+  useEffect(() => {
+    if (!drawerUrl) return;
+    // Read fresh from store — emailData closure may be stale
+    const current = useEmailStore.getState().emails[drawerUrl]?.recipientEmail;
+    if (current) return; // already set — don't overwrite
+    let recipient = scanResult?.emails_found?.[0];
+    if (!recipient) {
+      try {
+        const domain = new URL(drawerUrl).hostname.replace(/^www\./, "");
+        recipient = `info@${domain}`;
+      } catch {}
+    }
+    if (recipient) {
+      store.setRecipient(drawerUrl, recipient);
+      // Persist so it survives restarts — fire and forget
+      api.updateEmailRecipient(drawerUrl, recipient).catch(() => {});
+    }
+  }, [drawerUrl]);
 
   // Sync editor when URL changes or content arrives
   useEffect(() => {
@@ -192,6 +214,8 @@ export default function EmailDrawer() {
       useEmailStore.setState(s => ({
         emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], status: "sent", sentAt: new Date().toISOString() } }
       }));
+      // If this URL is a prospect in the Discover DB, mark it as emailed
+      try { await api.updateProspectStatus(drawerUrl, "emailed"); } catch {}
       setJustSent(true);
       setTimeout(() => setJustSent(false), 3000);
     } catch (e) {
@@ -204,7 +228,7 @@ export default function EmailDrawer() {
   const isOpen = !!drawerUrl;
   const isBusy = ["generating", "queued"].includes(emailData?.status);
   const hasContent = !!emailData?.htmlContent;
-  const wasAlreadySent = !!emailData?.sentAt;  // set by emailStore after successful send
+  const wasAlreadySent = !!emailData?.sentAt; // set by emailStore after successful send
 
   return (
     <AnimatePresence>
@@ -218,15 +242,15 @@ export default function EmailDrawer() {
         >
           {/* Header */}
           <div className="email-drawer__header">
-            <div style={{ display:"flex", flexDirection:"column", flex:1, minWidth:0, gap:4 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
-                <span style={{ fontSize:13, fontWeight:600 }}>Outreach Email</span>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, gap: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Outreach Email</span>
                 <StatusPill status={emailData?.status} />
                 <TokenBadge tokens={emailData?.tokensTotal} costType="email" />
               </div>
               {drawerUrl && <span className="email-drawer__url">{drawerUrl}</span>}
             </div>
-            <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
               <button className="btn btn--ghost btn--sm" onClick={generate} disabled={isBusy}>
                 {isBusy
                   ? <><div className="spinner" /> {emailData?.status === "queued" ? "Queued…" : "Generating…"}</>
@@ -241,26 +265,26 @@ export default function EmailDrawer() {
           </div>
 
           {/* Tabs */}
-          <div style={{ display:"flex", gap:0, borderBottom:"1px solid var(--border)",
-            background:"var(--bg3)", flexShrink:0 }}>
+          <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)",
+            background: "var(--bg3)", flexShrink: 0 }}>
             {[
-              { id:"preview", icon:<Eye size={12}/>,    label:"Preview" },
+              { id: "preview", icon: <Eye size={12}/>, label: "Preview" },
             ].map(tab => (
               <button key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 style={{
-                  display:"flex", alignItems:"center", gap:5, padding:"9px 16px",
-                  fontSize:12, fontWeight:500,
+                  display: "flex", alignItems: "center", gap: 5, padding: "9px 16px",
+                  fontSize: 12, fontWeight: 500,
                   color: "var(--blue)",
                   borderBottom: "2px solid var(--blue)",
-                  background: "none", marginBottom:"-1px",
+                  background: "none", marginBottom: "-1px",
                 }}>
                 {tab.icon} {tab.label}
               </button>
             ))}
-            <div style={{ flex:1 }} />
+            <div style={{ flex: 1 }} />
             <button className="btn btn--ghost btn--sm"
-              style={{ margin:"6px 12px" }}
+              style={{ margin: "6px 12px" }}
               onClick={() => navigator.clipboard.writeText(emailData?.htmlContent || "")}
               disabled={!hasContent}>
               <Copy size={11} /> Copy HTML
@@ -272,13 +296,13 @@ export default function EmailDrawer() {
             <AnimatePresence mode="wait">
               {emailData?.status === "error" && (
                 <motion.div key="err" className="alert alert--error"
-                  initial={{ opacity:0, y:-8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>
+                  initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                   <AlertCircle size={14} /> {emailData.error}
                 </motion.div>
               )}
               {isBusy && (
                 <motion.div key="busy" className="alert alert--info"
-                  initial={{ opacity:0, y:-8 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>
+                  initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                   <div className="spinner" />
                   {emailData?.status === "queued"
                     ? "Queued — waiting for previous generation…"
@@ -313,7 +337,7 @@ export default function EmailDrawer() {
                 value={emailData?.recipientEmail || ""}
                 onChange={e => drawerUrl && store.setRecipient(drawerUrl, e.target.value)}
                 placeholder="recipient@company.co.jp"
-                style={{ flex:1 }} />
+                style={{ flex: 1 }} />
               <button className="btn btn--primary" onClick={send}
                 disabled={!hasContent || !emailData?.recipientEmail || justSent}>
                 {justSent
