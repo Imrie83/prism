@@ -101,6 +101,46 @@ def update_email(url: str, recipient: str, subject: str, html: str) -> None:
     print(f"[db] email record saved for {url} → {recipient}")
 
 
+def schedule_email(url: str, recipient: str, subject: str, html: str, scheduled_at: str, settings: dict) -> None:
+    """Save an email with a scheduled_at time and the sending settings."""
+    existing = scans_db.get(ScanRecord.url == url)
+    if not existing:
+        print(f"[db] ⚠ no scan record for {url} — cannot schedule email")
+        return
+    email_block = {
+        "recipient": recipient,
+        "subject": subject,
+        "html": html,
+        "scheduled_at": scheduled_at,
+        "status": "scheduled",
+        "settings": settings,
+        "got_response": existing.get("email", {}).get("got_response", False),
+    }
+    scans_db.update({"email": email_block}, ScanRecord.url == url)
+    print(f"[db] email scheduled for {url} → {recipient} at {scheduled_at}")
+
+
+def cancel_scheduled_email(url: str) -> None:
+    """Cancel a scheduled email by reverting to a draft state."""
+    existing = scans_db.get(ScanRecord.url == url)
+    if not existing or not existing.get("email"):
+        return
+    email_block = existing["email"]
+    if "scheduled_at" in email_block:
+        del email_block["scheduled_at"]
+    if "settings" in email_block:
+        del email_block["settings"]
+    if email_block.get("status") == "scheduled":
+        email_block["status"] = "draft"
+    scans_db.update({"email": email_block}, ScanRecord.url == url)
+    print(f"[db] email schedule canceled for {url}")
+
+
+def get_scheduled_emails() -> list:
+    """Return a list of records that currently have a scheduled email."""
+    return [r for r in scans_db.all() if r.get("email", {}).get("status") == "scheduled"]
+
+
 def get_full_scan(url: str) -> dict | None:
     """Return full scan record with screenshot joined from screenshots.json."""
     record = scans_db.get(ScanRecord.url == url)

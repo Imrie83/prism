@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   RefreshCw, Trash2, Mail, MailCheck,
   CheckSquare, Square, ExternalLink, AlertCircle, Inbox,
-  Filter,
+  Filter, CalendarClock,
 } from "lucide-react";
 import { api } from "../lib/api";
 import SortHeader from "../components/SortHeader";
@@ -171,7 +171,8 @@ export default function HistoryPage() {
         if (full.email.subject) emailPatch.subject = full.email.subject;
         if (full.email.html) emailPatch.htmlContent = full.email.html;
         if (full.email.sent_at) emailPatch.sentAt = full.email.sent_at;
-        emailPatch.status = full.email.sent_at ? "sent" : full.email.html ? "ready" : undefined;
+        if (full.email.scheduled_at) emailPatch.scheduledAt = full.email.scheduled_at;
+        emailPatch.status = full.email.status || (full.email.sent_at ? "sent" : full.email.html ? "ready" : undefined);
         useEmailStore.setState(s => ({ emails: { ...s.emails, [full.url]: emailPatch } }));
       }
       setActiveTab("results");
@@ -355,8 +356,13 @@ export default function HistoryPage() {
                 <div><SevBadges counts={rec.issue_counts} /></div>
                 <div style={{ fontSize: 12, color: "var(--ink2)", textAlign: "center" }}>{rec.total_issues ?? "—"}</div>
                 <div style={{ fontSize: 12, color: "var(--ink2)" }}>{fmt(rec.scanned_at)}</div>
-                <div style={{ fontSize: 12, color: rec.email?.sent_at ? "var(--ink2)" : "var(--ink3)" }}>
-                  {rec.email?.sent_at ? (
+                <div style={{ fontSize: 12, color: (rec.email?.status === "scheduled" || rec.email?.sent_at) ? "var(--ink2)" : "var(--ink3)" }}>
+                  {rec.email?.status === "scheduled" ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#8b5cf6" }}>
+                      <CalendarClock size={12} />
+                      {fmt(rec.email.scheduled_at)}
+                    </span>
+                  ) : rec.email?.sent_at ? (
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       <MailCheck size={12} style={{ color: "var(--green)" }} />
                       {fmt(rec.email.sent_at)}

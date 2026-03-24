@@ -20,6 +20,12 @@ import os
 import re
 import traceback
 from urllib.parse import urljoin, urlparse
+from datetime import datetime, timezone
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -34,7 +40,7 @@ from .ai_client import (
     call_ollama_chat,
     _extract_json,
 )
-from .db import upsert_scan
+from .db import upsert_scan, get_scheduled_emails, update_email
 from .models import (
     AnalyzeRequest,
     CrawlRequest,
@@ -45,7 +51,70 @@ from .routes_history import router as history_router
 from .routes_discover import router as discover_router
 from .utils import extract_emails_from_html
 
-app = FastAPI(title="Prism Audit API", version="1.5.0")
+async def email_scheduler_loop():
+    while True:
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            scheduled = get_scheduled_emails()
+            for record in scheduled:
+                email_data = record.get("email", {})
+                scheduled_at = email_data.get("scheduled_at")
+                if scheduled_at and scheduled_at <= now:
+                    url = record.get("url")
+                    to = email_data.get("recipient")
+                    subject = email_data.get("subject")
+                    html = email_data.get("html")
+                    settings = email_data.get("settings", {})
+                    
+                    gmail_address = settings.get("gmail_address")
+                    gmail_app_password = settings.get("gmail_app_password")
+                    your_name = settings.get("your_name", "Marcin Zielinski")
+                    from_address = settings.get("from_address", "")
+                    
+                    if not gmail_address or not gmail_app_password:
+                        continue
+                        
+                    msg = MIMEMultipart("alternative")
+                    msg["Subject"] = subject
+                    visible_from = from_address.strip() if from_address.strip() else gmail_address
+                    msg["From"] = f"{your_name} <{visible_from}>"
+                    msg["To"] = to
+                    msg.attach(MIMEText(html, "html", "utf-8"))
+
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    
+                    def send_sync(
+                        c=ctx,
+                        g_addr=gmail_address,
+                        g_pwd=gmail_app_password,
+                        recipient=to,
+                        msg_str=msg.as_string()
+                    ):
+                        with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+                            smtp.ehlo()
+                            smtp.starttls(context=c)
+                            smtp.ehlo()
+                            smtp.login(g_addr, g_pwd)
+                            smtp.sendmail(g_addr, recipient, msg_str)
+                    
+                    await asyncio.to_thread(send_sync)
+                    update_email(url, to, subject, html)
+                    print(f"[scheduler] sent scheduled email for {url}")
+        except Exception as e:
+            print(f"[scheduler] error: {e}")
+            
+        await asyncio.sleep(60)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(email_scheduler_loop())
+    yield
+    task.cancel()
+
+app = FastAPI(title="Prism Audit API", version="1.5.0", lifespan=lifespan)
+
 
 app.add_middleware(
     CORSMiddleware,

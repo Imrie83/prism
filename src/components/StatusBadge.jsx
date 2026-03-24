@@ -9,6 +9,7 @@ const STATUS_META = {
   scanning: { label: "Scanning", color: "var(--blue)", bg: "var(--blue-glow)" },
   scanned: { label: "Scanned", color: "var(--green)", bg: "rgba(52,211,153,0.1)" },
   emailed: { label: "Emailed", color: "var(--accent)", bg: "rgba(251,191,36,0.1)" },
+  scheduled: { label: "Scheduled", color: "#8b5cf6", bg: "rgba(139,92,246,0.1)" },
   skipped: { label: "Skipped", color: "var(--ink3)", bg: "var(--surface)" },
 };
 

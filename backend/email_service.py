@@ -21,6 +21,8 @@ from .models import (
     GenerateEmailRequest,
     RebuildCardRequest,
     SendEmailRequest,
+    ScheduleEmailRequest,
+    CancelScheduleRequest,
 )
 from .prompts import EMAIL_SYSTEM
 
@@ -594,3 +596,30 @@ async def send_email(req: SendEmailRequest):
         raise
     except Exception as e:
         raise HTTPException(502, f"Failed to send: {e}")
+
+
+from .db import schedule_email, cancel_scheduled_email
+
+@router.post("/api/schedule-email")
+async def api_schedule_email(req: ScheduleEmailRequest):
+    try:
+        schedule_email(
+            url=req.url,
+            recipient=req.to,
+            subject=req.subject,
+            html=req.html,
+            scheduled_at=req.scheduled_at,
+            settings=req.settings.model_dump()
+        )
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(502, f"Failed to schedule: {e}")
+
+@router.post("/api/cancel-scheduled-email")
+async def api_cancel_scheduled_email(req: CancelScheduleRequest):
+    try:
+        cancel_scheduled_email(req.url)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(502, f"Failed to cancel schedule: {e}")
+

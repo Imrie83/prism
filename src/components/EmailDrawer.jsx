@@ -7,7 +7,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Wand2, Send, Copy, RefreshCw, Check, AlertCircle,
-  Clock, Zap, Mail, Eye
+  Clock, Zap, Mail, Eye, CalendarClock, XOctagon
 } from "lucide-react";
 import { useEmailStore } from "../stores/emailStore";
 import { useAISettings } from "../hooks/useAISettings";
@@ -43,6 +43,7 @@ function StatusPill({ status }) {
     ready: { label: "Ready", color: "var(--green)", icon: <Check size={10} /> },
     error: { label: "Error", color: "var(--red)", icon: <AlertCircle size={10} /> },
     sent: { label: "Sent", color: "var(--accent)",icon: <Mail size={10} /> },
+    scheduled: { label: "Scheduled", color: "#8b5cf6", icon: <CalendarClock size={10} /> },
   };
   const s = map[status];
   if (!s) return null;
@@ -97,6 +98,7 @@ export default function EmailDrawer() {
   const { drawerUrl, closeDrawer } = store;
   const [activeTab, setActiveTab] = useState("edit"); // "edit" | "preview"
   const [justSent, setJustSent] = useState(false);
+  const [scheduledAtStr, setScheduledAtStr] = useState("");
 
   // Find the scan result for this URL across all history banks
   const scanResult = (() => {
@@ -225,6 +227,45 @@ export default function EmailDrawer() {
     }
   }
 
+  async function scheduleSend() {
+    if (!drawerUrl || !scheduledAtStr) return;
+    const to = emailData?.recipientEmail?.trim();
+    if (!to) return;
+    try {
+      const iso = new Date(scheduledAtStr).toISOString();
+      await api.scheduleEmail(to, emailData.subject, emailData.htmlContent, {
+        gmail_address: settings.gmailAddress,
+        gmail_app_password: settings.gmailAppPassword,
+        your_name: settings.yourName,
+        from_address: settings.fromAddress,
+      }, iso, drawerUrl);
+      useEmailStore.setState(s => ({
+        emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], status: "scheduled", scheduledAt: iso, error: null } }
+      }));
+      try { await api.updateProspectStatus(drawerUrl, "scheduled"); } catch {}
+      setScheduledAtStr("");
+    } catch (e) {
+      useEmailStore.setState(s => ({
+        emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], error: e.message, status: "error" } }
+      }));
+    }
+  }
+
+  async function cancelSchedule() {
+    if (!drawerUrl) return;
+    try {
+      await api.cancelScheduledEmail(drawerUrl);
+      useEmailStore.setState(s => ({
+        emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], status: "draft", scheduledAt: null, error: null } }
+      }));
+      try { await api.updateProspectStatus(drawerUrl, "scanned"); } catch {}
+    } catch (e) {
+      useEmailStore.setState(s => ({
+        emails: { ...s.emails, [drawerUrl]: { ...s.emails[drawerUrl], error: e.message, status: "error" } }
+      }));
+    }
+  }
+
   const isOpen = !!drawerUrl;
   const isBusy = ["generating", "queued"].includes(emailData?.status);
   const hasContent = !!emailData?.htmlContent;
@@ -332,18 +373,45 @@ export default function EmailDrawer() {
                 ⚠ This email was already sent — you can send it again if needed
               </div>
             )}
-            <div style={{ display: "flex", gap: 8, width: "100%" }}>
+            <div style={{ display: "flex", gap: 8, width: "100%", alignItems: "center", flexWrap: "wrap" }}>
               <input type="email"
                 value={emailData?.recipientEmail || ""}
                 onChange={e => drawerUrl && store.setRecipient(drawerUrl, e.target.value)}
                 placeholder="recipient@company.co.jp"
-                style={{ flex: 1 }} />
-              <button className="btn btn--primary" onClick={send}
-                disabled={!hasContent || !emailData?.recipientEmail || justSent}>
-                {justSent
-                  ? <><Check size={13} /> Sent!</>
-                  : <><Send size={13} /> Send</>}
-              </button>
+                style={{ flex: 1, minWidth: "200px" }} />
+              
+              {emailData?.status === "scheduled" ? (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: "var(--ink2)", display: "flex", alignItems: "center", background: "var(--surface)", padding: "0 12px", borderRadius: "4px", border: "1px solid var(--border)" }}>
+                    {new Date(emailData.scheduledAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}
+                  </span>
+                  <button className="btn btn--ghost" onClick={cancelSchedule} style={{ color: "var(--red)" }}>
+                    <XOctagon size={13} /> Cancel
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input 
+                    type="datetime-local" 
+                    value={scheduledAtStr}
+                    onChange={e => setScheduledAtStr(e.target.value)}
+                    style={{ flex: "0 0 auto" }}
+                  />
+                  {scheduledAtStr ? (
+                    <button className="btn btn--primary" onClick={scheduleSend}
+                      disabled={!hasContent || !emailData?.recipientEmail} style={{ background: "#8b5cf6", borderColor: "#8b5cf6" }}>
+                      <CalendarClock size={13} /> Schedule
+                    </button>
+                  ) : (
+                    <button className="btn btn--primary" onClick={send}
+                      disabled={!hasContent || !emailData?.recipientEmail || justSent}>
+                      {justSent
+                        ? <><Check size={13} /> Sent!</>
+                        : <><Send size={13} /> Send</>}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </motion.div>

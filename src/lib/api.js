@@ -142,6 +142,14 @@ export const api = {
     return post("/send-email", { to, subject, html, url, settings });
   },
 
+  async scheduleEmail(to, subject, html, settings, scheduledAt, url = "") {
+    return post("/schedule-email", { to, subject, html, url, settings, scheduled_at: scheduledAt });
+  },
+
+  async cancelScheduledEmail(url) {
+    return post("/cancel-scheduled-email", { url });
+  },
+
   async rebuildCard(scanResult, selectedIndices) {
     return post("/rebuild-card", { scan_result: scanResult, selected_issue_indices: selectedIndices });
   },

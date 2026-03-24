@@ -75,6 +75,8 @@ async def get_history(
                 "email": {
                     "recipient": r.get("email", {}).get("recipient"),
                     "sent_at": r.get("email", {}).get("sent_at"),
+                    "status": r.get("email", {}).get("status"),
+                    "scheduled_at": r.get("email", {}).get("scheduled_at"),
                     "got_response": r.get("email", {}).get("got_response", False),
                 }
                 if r.get("email")
@@ -98,6 +100,8 @@ async def check_history(url: str):
         "email": {
             "recipient": record.get("email", {}).get("recipient"),
             "sent_at": record.get("email", {}).get("sent_at"),
+            "status": record.get("email", {}).get("status"),
+            "scheduled_at": record.get("email", {}).get("scheduled_at"),
             "got_response": record.get("email", {}).get("got_response", False),
         }
         if record.get("email")

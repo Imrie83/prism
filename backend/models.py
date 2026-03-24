@@ -65,6 +65,19 @@ class SendEmailRequest(BaseModel):
     settings: SendEmailSettings
 
 
+class ScheduleEmailRequest(BaseModel):
+    to: str
+    subject: str
+    html: str
+    url: str = ""
+    settings: SendEmailSettings
+    scheduled_at: str
+
+
+class CancelScheduleRequest(BaseModel):
+    url: str
+
+
 class AgentMessage(BaseModel):
     role: str
     content: str

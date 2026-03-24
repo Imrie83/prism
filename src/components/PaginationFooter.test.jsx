@@ -57,7 +57,7 @@ describe("PaginationFooter", () => {
 
     const buttons = screen.getAllByRole("button");
     // Last button is next (ChevronRight)
-    const nextBtn = buttons[buttons.length - 1];
+    const nextBtn = buttons.at(-1);
 
     fireEvent.click(nextBtn);
 
@@ -90,7 +90,7 @@ describe("PaginationFooter", () => {
     render(<PaginationFooter {...defaultProps} page={5} />);
 
     const buttons = screen.getAllByRole("button");
-    const nextBtn = buttons[buttons.length - 1];
+    const nextBtn = buttons.at(-1);
 
     expect(nextBtn).toBeDisabled();
   });
