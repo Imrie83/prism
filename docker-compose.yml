@@ -47,6 +47,6 @@ services:
     restart: unless-stopped
     shm_size: 2gb
     environment:
-      - DISCOVER_DEBUG=1
+      - DISCOVER_DEBUG=0
 
 volumes: {}

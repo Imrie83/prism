@@ -253,7 +253,7 @@ export default function HistoryPage() {
                 <input type="number" min={0} max={100} value={filterScoreMin}
                   onChange={e => { setFilterScoreMin(Number(e.target.value)); setPage(1); }}
                   style={{ width: 52, fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg3)", color: "var(--ink2)" }} />
-                <span style={{ fontSize: 11, color: "var(--ink3)" }}>–</span>
+                <span style={{ fontSize: 11, color: "var(--ink3)" }}>-</span>
                 <input type="number" min={0} max={100} value={filterScoreMax}
                   onChange={e => { setFilterScoreMax(Number(e.target.value)); setPage(1); }}
                   style={{ width: 52, fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg3)", color: "var(--ink2)" }} />

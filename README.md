@@ -29,7 +29,7 @@ Prism scans a Japanese website, takes a screenshot, runs it through an AI vision
   - **Deep** — crawls up to N pages, full 20-issue report, English (internal use).
   - **Batch** — run shallow scans across multiple URLs in sequence.
 - **AI vision analysis** — screenshot + HTML sent together; catches both text and visual/layout issues
-- **Scored report** — 0–100 English-readiness score with severity breakdown (high / medium / low)
+- **Scored report** — 0-100 English-readiness score with severity breakdown (high / medium / low)
 - **Bilingual email generation** — Japanese (Keigo) + English sections, embedded report card, CTA buttons
 - **One-click send** — Gmail SMTP via app password, sent directly from the tool
 - **Switchable AI providers** — Ollama (local), OpenAI, or Anthropic Claude; separate models for audit vs email

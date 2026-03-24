@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-escape */
 /**
  * discover.js — scrapes Google Maps search results for business listings.
  *
@@ -36,20 +37,20 @@ async function applyStealthPatches(page) {
     Object.defineProperty(navigator, "webdriver", { get: () => false });
     Object.defineProperty(navigator, "plugins", {
       get: () => [
-        { name: "Chrome PDF Plugin",  filename: "internal-pdf-viewer" },
-        { name: "Chrome PDF Viewer",  filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai" },
-        { name: "Native Client",      filename: "internal-nacl-plugin" },
+        { name: "Chrome PDF Plugin", filename: "internal-pdf-viewer" },
+        { name: "Chrome PDF Viewer", filename: "mhjfbmdgcfjbbpaeojofohoefgiehjai" },
+        { name: "Native Client", filename: "internal-nacl-plugin" },
       ],
     });
     Object.defineProperty(navigator, "languages", { get: () => ["ja", "en-US", "en"] });
-    window.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {}, app: {} };
+    globalThis.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {}, app: {} };
   });
 }
 
 export async function discoverBusinesses({ keywords, location, limit = 120, onProgress }) {
   const keywordList = keywords.split(",").map(k => k.trim()).filter(Boolean);
   const DEBUG = process.env.DISCOVER_DEBUG === "1";
-  const emit  = onProgress || (() => {});
+  const emit = onProgress || (() => {});
 
   console.log(`[discover] START keywords=${JSON.stringify(keywordList)} location="${location}" limit=${limit === 0 ? "all" : limit}`);
   emit({ type: "start", keywords: keywordList, location, limit });
@@ -76,7 +77,7 @@ export async function discoverBusinesses({ keywords, location, limit = 120, onPr
 
   try {
     for (const keyword of keywordList) {
-      const query     = [keyword, location].filter(Boolean).join(" ");
+      const query = [keyword, location].filter(Boolean).join(" ");
       const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
       console.log(`[discover] searching: "${query}"`);
       emit({ type: "keyword_start", keyword, query });
@@ -181,12 +182,12 @@ async function _searchOneMaps({ searchUrl, limit, context, DEBUG, emit, keyword 
         const container = card.parentElement || card;
         const name = container.querySelector('.qBF1Pd, .fontHeadlineSmall, [class*="fontHeadline"]')?.textContent?.trim() || "";
         if (!name) return null;
-        const rating      = container.querySelector('span.MW4etd')?.textContent?.trim() || "";
-        const reviewCount = container.querySelector('span.UY7F9')?.textContent?.replace(/[()]/g, "").trim() || "";
-        const category    = container.querySelector('.W4Efsd > span:first-child, .DkEaL')?.textContent?.trim() || "";
-        const address     = container.querySelector('.W4Efsd > span:last-child')?.textContent?.trim() || "";
-        const placeMatch  = href.match(/\/maps\/place\/([^/@]+)/);
-        const mapsUrl     = placeMatch ? `https://www.google.com/maps${placeMatch[0]}` : "";
+        const rating = container.querySelector('span.MW4etd')?.textContent?.trim() || "";
+        const reviewCount = container.querySelector('span.UY7F9')?.textContent?.replaceAll(/[()]/g, "").trim() || "";
+        const category = container.querySelector('.W4Efsd > span:first-child, .DkEaL')?.textContent?.trim() || "";
+        const address = container.querySelector('.W4Efsd > span:last-child')?.textContent?.trim() || "";
+        const placeMatch = new RegExp(/\/maps\/place\/([^/@]+)/).exec(href);
+        const mapsUrl = placeMatch ? `https://www.google.com/maps${placeMatch[0]}` : "";
         return { href, name, category, rating, reviewCount, address, mapsUrl };
       }).filter(Boolean);
     }, limit);
@@ -201,7 +202,7 @@ async function _searchOneMaps({ searchUrl, limit, context, DEBUG, emit, keyword 
       let website = null, phone = null, email = null;
       try {
         // Always re-query — element handles go stale after other cards are clicked
-        const escapedHref = data.href.replace(/"/g, '\"');
+        const escapedHref = data.href.replaceAll('"', '\"');
         const card = await page.$(`a[href="${escapedHref}"]`);
         if (card) {
           await card.scrollIntoViewIfNeeded().catch(() => {});

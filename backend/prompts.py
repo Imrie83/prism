@@ -86,17 +86,17 @@ JAPANESE WEB UX ANTI-PATTERNS (flag these specifically — Western users find th
 - Mobile viewport not configured (zoomed-out desktop layout on mobile)"""
 
 _AUDIT_SCORING = """\
-SCORING — be realistic and granular. Use the FULL 0–100 range:
-- 85–100: Near-perfect English readiness. Very minor polish only.
-- 70–84: Good foundation. A few notable issues but generally accessible to Westerners.
-- 50–69: Moderate issues. Western visitors will notice problems. Some friction.
-- 30–49: Significant issues. Core content is hard to navigate or understand.
-- 0–29: Major overhaul needed. Barely accessible to English-speaking audiences.
-Most real Japanese business sites score between 25–65. Do NOT cluster scores around 50–60. Be honest — if the site is poor, score it in the 20s or 30s. If it genuinely impresses, score it in the 80s.
+SCORING — be realistic and granular. Use the FULL 0-100 range:
+- 85-100: Near-perfect English readiness. Very minor polish only.
+- 70-84: Good foundation. A few notable issues but generally accessible to Westerners.
+- 50-69: Moderate issues. Western visitors will notice problems. Some friction.
+- 30-49: Significant issues. Core content is hard to navigate or understand.
+- 0-29: Major overhaul needed. Barely accessible to English-speaking audiences.
+Most real Japanese business sites score between 25-65. Do NOT cluster scores around 50-60. Be honest — if the site is poor, score it in the 20s or 30s. If it genuinely impresses, score it in the 80s.
 
 SEVERITY BALANCE — you MUST include a mix of severities:
-- High: 2–4 issues maximum. Reserve for genuinely blocking problems.
-- Medium: 2–4 issues.
+- High: 2-4 issues maximum. Reserve for genuinely blocking problems.
+- Medium: 2-4 issues.
 - Low: AT LEAST 1 low-severity issue. Low issues are real but minor — small polish items, subtle UX improvements, nice-to-haves.
 Never return all high or all medium. Every audit must have at least one low.
 

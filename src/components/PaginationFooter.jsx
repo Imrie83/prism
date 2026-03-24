@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
  * Props:
  *   page        — current page (1-based)
  *   totalPages  — total number of pages
- *   total       — total record count (for "X–Y of Z" display)
+ *   total       — total record count (for "X-Y of Z" display)
  *   perPage     — records per page (0 = all)
  *   onPage      — callback(newPage)
  */
@@ -35,7 +35,7 @@ export default function PaginationFooter({ page, totalPages, total, perPage, onP
       background: "var(--bg3)",
     }}>
       <span style={{ fontSize: 11, color: "var(--ink3)" }}>
-        {perPage === 0 ? `All ${total}` : `${from}–${to} of ${total}`}
+        {perPage === 0 ? `All ${total}` : `${from}-${to} of ${total}`}
       </span>
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
         <button

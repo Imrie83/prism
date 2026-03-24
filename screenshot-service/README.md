@@ -38,6 +38,6 @@ curl -X POST http://localhost:3000/screenshot \
 ## Notes
 
 - Playwright downloads ~170MB of Chromium on first `npx playwright install chromium`
-- Each capture takes 5–15 seconds depending on page complexity
+- Each capture takes 5-15 seconds depending on page complexity
 - The service keeps no state — each request is a fresh browser instance
 - For production consider adding rate limiting and authentication
