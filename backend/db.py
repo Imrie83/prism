@@ -12,11 +12,13 @@ from datetime import datetime, timezone
 
 from tinydb import TinyDB, Query
 
-os.makedirs("/app/data", exist_ok=True)
+# Use relative path which works both locally and in Docker (WORKDIR /app)
+DB_DIR = "data"
+os.makedirs(DB_DIR, exist_ok=True)
 
-scans_db = TinyDB("/app/data/scans.json", indent=2, ensure_ascii=False)
-screenshots_db = TinyDB("/app/data/screenshots.json", indent=2, ensure_ascii=False)
-prospects_db = TinyDB("/app/data/prospects.json", indent=2, ensure_ascii=False)
+scans_db = TinyDB(os.path.join(DB_DIR, "scans.json"), indent=2, ensure_ascii=False, encoding="utf-8")
+screenshots_db = TinyDB(os.path.join(DB_DIR, "screenshots.json"), indent=2, ensure_ascii=False, encoding="utf-8")
+prospects_db = TinyDB(os.path.join(DB_DIR, "prospects.json"), indent=2, ensure_ascii=False, encoding="utf-8")
 ScanRecord = Query()
 ProspectRecord = Query()
 
@@ -151,6 +153,24 @@ def get_full_scan(url: str) -> dict | None:
     if shot:
         record = {**record, "screenshot_b64": shot.get("screenshot_b64", "")}
     return record
+
+
+def get_global_settings() -> dict:
+    """Return global settings from a special record in scans_db."""
+    record = scans_db.get(ScanRecord.type == "__global_settings__")
+    if not record:
+        # Default fallback
+        return {"bounce_check_interval": 10}
+    return record.get("settings", {"bounce_check_interval": 10})
+
+
+def update_global_settings(settings: dict) -> None:
+    """Update global settings in a special record in scans_db."""
+    scans_db.upsert(
+        {"type": "__global_settings__", "settings": settings},
+        ScanRecord.type == "__global_settings__",
+    )
+    print("[db] global settings updated")
 
 
 # Run migration on import (safe — no-op if already done)

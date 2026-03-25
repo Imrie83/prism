@@ -16,6 +16,7 @@ class AISettings(BaseModel):
     anthropic_model: str = "claude-sonnet-4-6"
     screenshot_service_url: str = "http://screenshot:3000"
     max_deep_pages: int = 20
+    bounce_check_interval: int = 10
 
 
 class AnalyzeRequest(BaseModel):

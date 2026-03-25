@@ -137,7 +137,7 @@ export default function HistoryPage() {
 
   async function handleToggleContact(url, e, currentStatus) {
     e.stopPropagation();
-    const newStatus = currentStatus === "dont_contact" ? null : "dont_contact";
+    const newStatus = currentStatus === "dont_contact" ? "" : "dont_contact";
     try {
       await api.updateHistoryStatus(url, newStatus);
       setRecords(recs => recs.map(r =>

@@ -222,6 +222,29 @@ export default function SettingsModal({ onClose }) {
             </div>
           </div>
 
+          {/* Email Polling */}
+          <div className="modal__section">
+            <h3>Email Polling (Background Worker)</h3>
+            <p className="text-muted text-sm mb-12">
+              The worker checks for bounced emails and sends scheduled emails.
+            </p>
+            <div className="field-row">
+              <div className="field">
+                <label>Bounce Check Interval (minutes)</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                   <input type="number" min={1} max={1440} value={s.bounceCheckInterval}
+                    onChange={async e => {
+                      const val = Number(e.target.value);
+                      s.setField("bounceCheckInterval", val);
+                      try { await api.updateGlobalSettings({ bounce_check_interval: val }); } catch {}
+                    }}
+                    style={{ flex: 1 }} />
+                   <span style={{ fontSize: 11, color: "var(--ink3)" }}>min</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <div className="modal__footer" style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>

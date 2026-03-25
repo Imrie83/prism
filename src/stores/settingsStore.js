@@ -57,6 +57,7 @@ export const useSettingsStore = create(
       emailAnthropicModel: "claude-haiku-4-5-20251001", // haiku for audit, sonnet for email by default
       emailOllamaModel: "qwen3.5:9b",
       emailOpenaiModel: "gpt-4o",
+      bounceCheckInterval: 10,
 
       // Token cost — audit (Haiku by default)
       auditInputCostPer1M: HAIKU_INPUT_COST,

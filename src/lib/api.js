@@ -201,4 +201,11 @@ export const api = {
   async updateProspectEmail(website, email) {
     return fetch(`${BASE}/discover/email`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ website, email }) }).then(r => r.json());
   },
+  async getGlobalSettings() {
+    const res = await fetch(`${BASE}/settings`);
+    return res.json();
+  },
+  async updateGlobalSettings(settings) {
+    return post("/settings", settings);
+  },
 };

@@ -54,23 +54,40 @@ def extract_bounced_address(msg):
     return None
 
 async def email_bounce_monitor_loop():
-    interval = int(os.environ.get("BOUNCE_CHECK_INTERVAL_MINUTES", "10"))
     while True:
         try:
+            from .db import get_global_settings
+            settings = get_global_settings()
+            interval = settings.get("bounce_check_interval", 10)
+            
             gmail_address = os.environ.get("GMAIL_ADDRESS")
             gmail_app_password = os.environ.get("GMAIL_APP_PASSWORD")
             
             if not gmail_address or not gmail_app_password:
+                print(f"[bounce_monitor] Missing GMAIL_ADDRESS or GMAIL_APP_PASSWORD. Waiting {interval}m...")
                 await asyncio.sleep(interval * 60)
                 continue
                 
+            imap_server = os.environ.get("EMAIL_IMAP_SERVER", "imap.gmail.com")
+            imap_port = int(os.environ.get("EMAIL_IMAP_PORT", "993"))
+
             def check_imap():
                 bounced = []
                 try:
-                    mail = imaplib.IMAP4_SSL("imap.gmail.com")
+                    if imap_port == 993:
+                        mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+                    else:
+                        mail = imaplib.IMAP4(imap_server, imap_port)
+                        # ProtonMail Bridge on 1143 uses STARTTLS
+                        try:
+                            mail.starttls()
+                        except:
+                            pass
+                    
+                    bounce_sender = os.environ.get("EMAIL_BOUNCE_SENDER", "mailer-daemon")
                     mail.login(gmail_address, gmail_app_password)
                     mail.select("inbox")
-                    status, messages = mail.search(None, '(UNSEEN FROM "mailer-daemon@googlemail.com")')
+                    status, messages = mail.search(None, f'(UNSEEN FROM "{bounce_sender}")')
                     if status == "OK" and messages[0]:
                         for num in messages[0].split():
                             res, data = mail.fetch(num, "(RFC822)")
@@ -136,11 +153,12 @@ async def email_bounce_monitor_loop():
                     scans_db.update({"email": updated_email}, ScanRecord.url == url)
 
         except Exception as e:
-            print(f"[bounce_monitor] error: {e}")
+            print(f"[bounce_monitor] error: {e}", flush=True)
             
         await asyncio.sleep(interval * 60)
         
 async def email_scheduler_loop():
+    print("[scheduler] 🕒 Starting scheduler loop...", flush=True)
     while True:
         try:
             now = datetime.now(timezone.utc).isoformat()
@@ -161,7 +179,7 @@ async def email_scheduler_loop():
                     from_address = settings.get("from_address", "")
                     
                     if not gmail_address or not gmail_app_password:
-                        print(f"[scheduler] Missing global gmail credentials for {url}")
+                        print(f"[scheduler] ⚠ Missing global gmail credentials for {url}", flush=True)
                         continue
                         
                     msg = MIMEMultipart("alternative")
@@ -175,17 +193,28 @@ async def email_scheduler_loop():
                     ctx.check_hostname = False
                     ctx.verify_mode = ssl.CERT_NONE
                     
+                    smtp_server = os.environ.get("EMAIL_SMTP_SERVER", "smtp.gmail.com")
+                    smtp_port = int(os.environ.get("EMAIL_SMTP_PORT", "587"))
+                    
                     def send_sync(
                         c=ctx,
                         g_addr=gmail_address,
                         g_pwd=gmail_app_password,
                         recipient=to,
-                        msg_str=msg.as_string()
+                        msg_str=msg.as_string(),
+                        host=smtp_server,
+                        port=smtp_port
                     ):
-                        with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+                        if port == 465:
+                            smtp_class = smtplib.SMTP_SSL
+                        else:
+                            smtp_class = smtplib.SMTP
+
+                        with smtp_class(host, port) as smtp:
                             smtp.ehlo()
-                            smtp.starttls(context=c)
-                            smtp.ehlo()
+                            if port in [587, 1025]:
+                                smtp.starttls(context=c)
+                                smtp.ehlo()
                             smtp.login(g_addr, g_pwd)
                             smtp.sendmail(g_addr, recipient, msg_str)
                     
@@ -198,21 +227,26 @@ async def email_scheduler_loop():
                          scans_db.update({"email": post_send["email"]}, ScanRecord.url == url)
 
                     prospects_db.update({"status": "emailed"}, ProspectRecord.website == url)
-                    print(f"[scheduler] sent scheduled email for {url}")
+                    print(f"[scheduler] ✅ sent scheduled email for {url}", flush=True)
         except Exception as e:
             print(f"[scheduler] error: {e}")
             
         await asyncio.sleep(60)
 
 async def main():
-    print("[worker] Starting background worker...")
-    print(f"[worker] Monitoring bounce for: {os.environ.get('GMAIL_ADDRESS')}")
-    asyncio.gather(
-        email_scheduler_loop(),
-        email_bounce_monitor_loop()
-    )
-    while True:
-        await asyncio.sleep(3600)
+    print("[worker] 🚀 Starting background worker...", flush=True)
+    gmail = os.environ.get('GMAIL_ADDRESS')
+    print(f"[worker] Monitoring for: {gmail}", flush=True)
+    
+    # Run both loops concurrently and await them so the process stays alive correctly
+    try:
+        await asyncio.gather(
+            email_scheduler_loop(),
+            email_bounce_monitor_loop()
+        )
+    except Exception as e:
+        print(f"[worker] ⚠ Critical error in main gather: {e}")
+        traceback.print_exc()
 
 if __name__ == "__main__":
     asyncio.run(main())

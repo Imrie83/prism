@@ -38,6 +38,7 @@ services:
     command: python -m backend.worker
     environment:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - PYTHONUNBUFFERED=1
     env_file:
       - .env
     volumes:

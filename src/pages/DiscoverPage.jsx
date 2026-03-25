@@ -5,7 +5,7 @@ import {
   Search, MapPin, ScanLine, ExternalLink, Trash2,
   RefreshCw, AlertCircle, Inbox,
   Globe, Star, CheckCircle, Filter, CheckSquare, Square,
-  Bookmark, X, Ban
+  Bookmark, X, Ban, MessageSquare
 } from "lucide-react";
 import { api } from "../lib/api";
 import SortHeader from "../components/SortHeader";
@@ -702,6 +702,7 @@ export default function DiscoverPage() {
                         <option value="queued">Queued</option>
                         <option value="scanned">Scanned</option>
                         <option value="emailed">Emailed</option>
+                        <option value="scheduled">Scheduled</option>
                         <option value="skipped">Skipped</option>
                         <option value="bounced">Bounced (Retry)</option>
                         <option value="cant_deliver">Can't Deliver</option>
@@ -846,6 +847,29 @@ export default function DiscoverPage() {
                               disabled={!!scanningUrl}
                               title="Scan this site">
                               <ScanLine size={12} />
+                            </motion.button>
+                          )}
+                          <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}
+                            className={`btn btn--sm ${rec.status === "dont_contact" ? "btn--primary" : "btn--ghost"}`}
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const next = rec.status === "dont_contact" ? "pending" : "dont_contact";
+                              await api.updateProspectStatus(rec.website, next);
+                              setRecords(recs => recs.map(r => r.website === rec.website ? { ...r, status: next } : r));
+                            }}
+                            title="Toggle Don't Contact">
+                            <Ban size={12} />
+                          </motion.button>
+                          {(rec.status === "emailed" || rec.email?.sent_at) && (
+                            <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}
+                              className="btn btn--sm btn--ghost"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const res = await api.toggleResponse(rec.website);
+                                setRecords(recs => recs.map(r => r.website === rec.website ? { ...r, email: { ...r.email, got_response: res.got_response } } : r));
+                              }}
+                              title="Toggle Response">
+                              <MessageSquare size={12} style={{ color: rec.email?.got_response ? "var(--green)" : "inherit" }} />
                             </motion.button>
                           )}
                           {rec.status === "scanned" && (

@@ -49,6 +49,8 @@ async def get_history(
         all_records = [r for r in all_records if r.get("email", {}).get("status") == "bounced"]
     elif filter_email == "cant_deliver":
         all_records = [r for r in all_records if r.get("email", {}).get("status") == "cant_deliver"]
+    elif filter_email == "scheduled":
+        all_records = [r for r in all_records if r.get("email", {}).get("status") == "scheduled"]
 
     if filter_score_min > 0 or filter_score_max < 100:
         all_records = [
@@ -97,6 +99,21 @@ async def get_history(
             }
         )
     return {"records": slim, "total": total, "page": page, "per_page": per_page}
+
+
+@router.get("/api/settings")
+async def get_settings():
+    """Return global server-side settings."""
+    from .db import get_global_settings
+    return get_global_settings()
+
+
+@router.post("/api/settings")
+async def update_settings(body: dict):
+    """Update global server-side settings."""
+    from .db import update_global_settings
+    update_global_settings(body)
+    return {"ok": True}
 
 
 @router.get("/api/history/check")
@@ -186,8 +203,8 @@ async def update_history_status(body: dict):
     """Update status indicator (like dont_contact) for a history record."""
     url = body.get("url")
     status = body.get("status")
-    if not url or not status:
-        raise HTTPException(400, "url and status required")
+    if not url:
+        raise HTTPException(400, "url required")
     record = scans_db.get(ScanRecord.url == url)
     if not record:
         raise HTTPException(404, "No record found")
