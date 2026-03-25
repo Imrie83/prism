@@ -15,9 +15,7 @@ export const useSettingsStore = create(
       aiProvider: "ollama",
       ollamaBaseUrl: "http://localhost:11434",
       ollamaModel: "qwen3.5:9b",
-      openaiApiKey: "",
       openaiModel: "gpt-4o-mini",
-      anthropicApiKey: "",
       anthropicModel: "claude-sonnet-4-6",
 
       // Screenshot service
@@ -33,8 +31,6 @@ export const useSettingsStore = create(
       yourWebsite: "https://imrie83.github.io/shinrai/",
 
       // Gmail SMTP
-      gmailAddress: "",
-      gmailAppPassword: "",
       fromAddress: "zielinski.marcin@shinrai.pro",
       autoGenerateEmail: false,
       historyPerPage: 15,

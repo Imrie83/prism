@@ -36,6 +36,10 @@ async def get_history(
         all_records = [r for r in all_records if not r.get("email", {}).get("sent_at")]
     elif filter_email == "got_response":
         all_records = [r for r in all_records if r.get("email", {}).get("got_response")]
+    elif filter_email == "bounced":
+        all_records = [r for r in all_records if r.get("email", {}).get("status") == "bounced"]
+    elif filter_email == "cant_deliver":
+        all_records = [r for r in all_records if r.get("email", {}).get("status") == "cant_deliver"]
 
     if filter_score_min > 0 or filter_score_max < 100:
         all_records = [

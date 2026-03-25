@@ -11,6 +11,8 @@ const STATUS_META = {
   emailed: { label: "Emailed", color: "var(--accent)", bg: "rgba(251,191,36,0.1)" },
   scheduled: { label: "Scheduled", color: "#8b5cf6", bg: "rgba(139,92,246,0.1)" },
   skipped: { label: "Skipped", color: "var(--ink3)", bg: "var(--surface)" },
+  bounced: { label: "Bounced", color: "#ef4444", bg: "rgba(239,68,68,0.1)" },
+  cant_deliver: { label: "Can't Deliver", color: "#dc2626", bg: "rgba(220,38,38,0.15)" },
 };
 
 export default function StatusBadge({ status }) {

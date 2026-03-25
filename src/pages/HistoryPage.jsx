@@ -23,7 +23,7 @@ function fmt(iso) {
 function shortUrl(url) {
   try {
     const u = new URL(url);
-    return u.hostname + (u.pathname !== "/" ? u.pathname : "");
+    return u.hostname + (u.pathname === "/" ? "" : u.pathname);
   } catch { return url; }
 }
 
@@ -247,6 +247,8 @@ export default function HistoryPage() {
                   <option value="sent">Sent</option>
                   <option value="not_sent">Not sent</option>
                   <option value="got_response">Got response</option>
+                  <option value="bounced">Bounced (Retry)</option>
+                  <option value="cant_deliver">Can't deliver</option>
                 </select>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

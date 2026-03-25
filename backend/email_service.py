@@ -16,6 +16,11 @@ from fastapi.responses import StreamingResponse
 
 from .ai_client import call_ai, call_claude, call_openai, call_ollama, _extract_json
 from .db import update_email
+import os
+
+from dotenv import load_dotenv
+load_dotenv()
+
 from .models import (
     AISettings,
     GenerateEmailRequest,
@@ -560,13 +565,10 @@ async def rebuild_card(req: RebuildCardRequest):
 
 
 @router.post("/api/send-email")
-async def send_email(req: SendEmailRequest):
+async def api_send_email(req: SendEmailRequest):
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-    s = req.settings
-    if not s.gmail_address or not s.gmail_app_password:
-        raise HTTPException(400, "Gmail credentials not configured.")
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = req.subject

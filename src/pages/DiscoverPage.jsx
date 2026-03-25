@@ -679,6 +679,8 @@ export default function DiscoverPage() {
                         <option value="scanned">Scanned</option>
                         <option value="emailed">Emailed</option>
                         <option value="skipped">Skipped</option>
+                        <option value="bounced">Bounced (Retry)</option>
+                        <option value="cant_deliver">Can't Deliver</option>
                       </select>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

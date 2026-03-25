@@ -9,7 +9,10 @@ call_ai() dispatches to the right provider and returns parsed JSON.
 import json
 import re
 
-import httpx
+import os
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from .models import AISettings
 
@@ -109,7 +112,7 @@ async def call_openai(
         r = await client.post(
             "https://api.openai.com/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', api_key)}",
                 "Content-Type": "application/json",
             },
             json={
@@ -176,7 +179,7 @@ async def call_claude(
         r = await client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
-                "x-api-key": api_key,
+                "x-api-key": os.environ.get("ANTHROPIC_API_KEY", api_key),
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
             },
@@ -201,7 +204,7 @@ async def call_claude(
                 r2 = await client.post(
                     "https://api.anthropic.com/v1/messages",
                     headers={
-                        "x-api-key": api_key,
+                        "x-api-key": os.environ.get("ANTHROPIC_API_KEY", api_key),
                         "anthropic-version": "2023-06-01",
                         "Content-Type": "application/json",
                     },
@@ -291,11 +294,11 @@ async def call_ai(
     """Dispatch to the configured AI provider, parse JSON, return dict with _usage key."""
     if settings.ai_provider == "openai":
         raw, usage = await call_openai(
-            prompt, system, settings.openai_api_key, settings.openai_model, images
+            prompt, system, getattr(settings, "openai_api_key", ""), settings.openai_model, images
         )
     elif settings.ai_provider == "claude":
         raw, usage = await call_claude(
-            prompt, system, settings.anthropic_api_key, settings.anthropic_model, images
+            prompt, system, getattr(settings, "anthropic_api_key", ""), settings.anthropic_model, images
         )
     else:
         raw, usage = await call_ollama(

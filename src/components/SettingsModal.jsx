@@ -1,33 +1,6 @@
-import { X, Eye, EyeOff, CheckCircle, XCircle, Loader } from "lucide-react";
+import { X, CheckCircle, XCircle, Loader } from "lucide-react";
 import { useState } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
-
-function PasswordField({ label, fieldKey }) {
-  const [show, setShow] = useState(false);
-  const value = useSettingsStore(s => s[fieldKey]);
-  const setField = useSettingsStore(s => s.setField);
-
-  return (
-    <div className="field">
-      <label>{label}</label>
-      <div style={{ position: "relative" }}>
-        <input
-          type={show ? "text" : "password"}
-          value={value}
-          onChange={e => setField(fieldKey, e.target.value)}
-          style={{ paddingRight: 40 }}
-        />
-        <button
-          onClick={() => setShow(s => !s)}
-          style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
-            color: "var(--ink3)", padding: 4 }}
-        >
-          {show ? <EyeOff size={14} /> : <Eye size={14} />}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export default function SettingsModal({ onClose }) {
   const s = useSettingsStore();
@@ -45,9 +18,7 @@ export default function SettingsModal({ onClose }) {
             ai_provider: s.aiProvider,
             ollama_base_url: s.ollamaBaseUrl,
             ollama_model: s.ollamaModel,
-            openai_api_key: s.openaiApiKey,
             openai_model: s.openaiModel,
-            anthropic_api_key: s.anthropicApiKey,
             anthropic_model: s.anthropicModel,
             screenshot_service_url: s.screenshotServiceUrl,
             max_deep_pages: s.maxDeepPages,
@@ -100,24 +71,18 @@ export default function SettingsModal({ onClose }) {
             )}
 
             {s.aiProvider === "openai" && (
-              <div className="field-row">
-                <PasswordField label="OpenAI API Key" fieldKey="openaiApiKey" />
-                <div className="field">
+              <div className="field">
                   <label>Model</label>
                   <input value={s.openaiModel} onChange={e => s.setField("openaiModel", e.target.value)}
                     placeholder="gpt-4o-mini" />
-                </div>
               </div>
             )}
 
             {s.aiProvider === "claude" && (
-              <div className="field-row">
-                <PasswordField label="Anthropic API Key" fieldKey="anthropicApiKey" />
-                <div className="field">
+              <div className="field">
                   <label>Model</label>
                   <input value={s.anthropicModel} onChange={e => s.setField("anthropicModel", e.target.value)}
                     placeholder="claude-sonnet-4-6" />
-                </div>
               </div>
             )}
           </div>
@@ -245,19 +210,8 @@ export default function SettingsModal({ onClose }) {
           <div className="modal__section">
             <h3>Gmail SMTP</h3>
             <p className="text-muted text-sm mb-12">
-              Requires a Gmail App Password — not your regular password.{" "}
-              <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer">
-                Generate one here ↗
-              </a>
+              SMTP settings are now configured globally via your `.env` file!
             </p>
-            <div className="field-row">
-              <div className="field">
-                <label>Gmail Address</label>
-                <input type="email" value={s.gmailAddress}
-                  onChange={e => s.setField("gmailAddress", e.target.value)} />
-              </div>
-              <PasswordField label="App Password" fieldKey="gmailAppPassword" />
-            </div>
             <div className="field-row">
               <div className="field">
                 <label>From Address (visible to recipient)</label>
