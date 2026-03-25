@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   RefreshCw, Trash2, Mail, MailCheck,
   CheckSquare, Square, ExternalLink, AlertCircle, Inbox,
-  Filter, CalendarClock,
+  Filter, CalendarClock, Ban
 } from "lucide-react";
 import { api } from "../lib/api";
 import SortHeader from "../components/SortHeader";
@@ -59,9 +59,10 @@ export default function HistoryPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const historySettings = useSettingsStore();
-  const { historyPerPage, setField } = historySettings;
+  const { historyPerPage, historySearch, setField } = historySettings;
   const perPage = historyPerPage;
   const setPerPage = (n) => setField("historyPerPage", n);
+  const setSearch = (s) => setField("historySearch", s);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [deletingUrl, setDeletingUrl] = useState(null);
@@ -90,7 +91,7 @@ export default function HistoryPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getHistory(p, perPage, sortBy, sortDir, filterEmail, filterScoreMin, filterScoreMax);
+      const data = await api.getHistory(p, perPage, sortBy, sortDir, filterEmail, filterScoreMin, filterScoreMax, historySearch);
       setRecords(data.records);
       setTotal(data.total);
     } catch (e) {
@@ -98,9 +99,9 @@ export default function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, perPage, sortBy, sortDir, filterEmail, filterScoreMin, filterScoreMax]);
+  }, [page, perPage, sortBy, sortDir, filterEmail, filterScoreMin, filterScoreMax, historySearch]);
 
-  useEffect(() => { load(page); }, [page, perPage, sortBy, sortDir, filterEmail, filterScoreMin, filterScoreMax]);
+  useEffect(() => { load(page); }, [page, perPage, sortBy, sortDir, filterEmail, filterScoreMin, filterScoreMax, historySearch]);
 
   function handleSort(field) {
     if (sortBy === field) {
@@ -116,10 +117,11 @@ export default function HistoryPage() {
     setFilterEmail("all");
     setFilterScoreMin(0);
     setFilterScoreMax(100);
+    setSearch("");
     setPage(1);
   }
 
-  const hasActiveFilters = filterEmail !== "all" || filterScoreMin > 0 || filterScoreMax < 100;
+  const hasActiveFilters = filterEmail !== "all" || filterScoreMin > 0 || filterScoreMax < 100 || historySearch !== "";
 
   async function handleToggleResponse(url, e) {
     e.stopPropagation();
@@ -131,6 +133,21 @@ export default function HistoryPage() {
           : r
       ));
     } catch {}
+  }
+
+  async function handleToggleContact(url, e, currentStatus) {
+    e.stopPropagation();
+    const newStatus = currentStatus === "dont_contact" ? null : "dont_contact";
+    try {
+      await api.updateHistoryStatus(url, newStatus);
+      setRecords(recs => recs.map(r =>
+        r.url === url
+          ? { ...r, email: { ...r.email, status: newStatus } }
+          : r
+      ));
+    } catch (err) {
+      alert("Failed to update status: " + err.message);
+    }
   }
 
   async function handleDelete(url, e) {
@@ -161,6 +178,7 @@ export default function HistoryPage() {
         issues: full.issues || [],
         screenshot: full.screenshot_b64,
         scan_mode: full.scan_mode,
+        _tokens: full._tokens,
         _fromHistory: true,
       };
       const runId = startShallow(full.url);
@@ -238,6 +256,15 @@ export default function HistoryPage() {
               border: "1px solid var(--border)", borderRadius: "var(--radius)",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="text"
+                  placeholder="Search url or title..."
+                  value={historySearch}
+                  onChange={e => { setSearch(e.target.value); setPage(1); }}
+                  style={{ width: 140, fontSize: 11, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg3)", color: "var(--ink1)" }}
+                />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 11, color: "var(--ink3)", fontWeight: 600 }}>EMAIL</span>
                 <select
                   value={filterEmail}
@@ -249,6 +276,7 @@ export default function HistoryPage() {
                   <option value="got_response">Got response</option>
                   <option value="bounced">Bounced (Retry)</option>
                   <option value="cant_deliver">Can't deliver</option>
+                  <option value="dont_contact">Don't contact</option>
                 </select>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -369,6 +397,10 @@ export default function HistoryPage() {
                       <MailCheck size={12} style={{ color: "var(--green)" }} />
                       {fmt(rec.email.sent_at)}
                     </span>
+                  ) : rec.email?.status === "dont_contact" ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#9ca3af" }}>
+                      <Ban size={12} /> Don't Contact
+                    </span>
                   ) : (
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       <Mail size={12} style={{ opacity: 0.3 }} /> —
@@ -391,6 +423,16 @@ export default function HistoryPage() {
                     }}
                     title={rec.email?.got_response ? "Got response" : "No response yet"}>
                     {rec.email?.got_response ? <CheckSquare size={15} /> : <Square size={15} />}
+                  </button>
+                  <button
+                    onClick={e => handleToggleContact(rec.url, e, rec.email?.status)}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer",
+                      color: rec.email?.status === "dont_contact" ? "#9ca3af" : "var(--ink3)",
+                      padding: 4, borderRadius: 4, display: "flex", opacity: rec.email?.status === "dont_contact" ? 1 : 0.6,
+                    }}
+                    title={rec.email?.status === "dont_contact" ? "Unmark Don't Contact" : "Mark Don't Contact"}>
+                    <Ban size={13} />
                   </button>
                   <button
                     onClick={e => handleDelete(rec.url, e)}

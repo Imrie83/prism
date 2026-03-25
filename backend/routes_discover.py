@@ -126,9 +126,19 @@ async def get_prospects(
     sort_dir: str = "desc",
     filter_status: str = "all",
     filter_has_email: str = "all",
+    search: str = "",
 ):
-    """Return saved prospects, optionally filtered by session."""
+    """Return saved prospects, optionally filtered by session or search."""
     records = prospects_db.all()
+
+    if search:
+        s_lower = search.lower()
+        records = [
+            r for r in records
+            if s_lower in (r.get("name") or "").lower() 
+            or s_lower in (r.get("website") or "").lower()
+            or s_lower in str(r.get("rating") or "")
+        ]
 
     if session_id:
         records = [r for r in records if r.get("session_id") == session_id]

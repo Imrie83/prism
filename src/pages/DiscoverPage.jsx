@@ -5,7 +5,7 @@ import {
   Search, MapPin, ScanLine, ExternalLink, Trash2,
   RefreshCw, AlertCircle, Inbox,
   Globe, Star, CheckCircle, Filter, CheckSquare, Square,
-  Bookmark, X,
+  Bookmark, X, Ban
 } from "lucide-react";
 import { api } from "../lib/api";
 import SortHeader from "../components/SortHeader";
@@ -91,12 +91,14 @@ export default function DiscoverPage() {
   const sortDir = settings.discoverSortDir;
   const filterStatus = settings.discoverFilterStatus;
   const filterHasEmail = settings.discoverFilterHasEmail;
+  const discoverSearch = settings.discoverSearch;
   const perPage = settings.discoverPerPage;
   const setSortBy = (v) => settings.setField("discoverSortBy", v);
   const setSortDir = (v) => settings.setField("discoverSortDir", v);
   const setFilterStatus = (v) => settings.setField("discoverFilterStatus", v);
   const setFilterHasEmail = (v) => settings.setField("discoverFilterHasEmail", v);
   const setPerPage = (v) => settings.setField("discoverPerPage", v);
+  const setSearch = (v) => settings.setField("discoverSearch", v);
 
   // Local-only UI refs (don't need to survive tab switch)
   const keywordsRef = useRef(null);
@@ -166,7 +168,7 @@ export default function DiscoverPage() {
     setLoading(true);
     ds.setField("selected", []);
     try {
-      const data = await api.getProspects(sessionId, sortBy, sortDir, filterStatus, filterHasEmail);
+      const data = await api.getProspects(sessionId, sortBy, sortDir, filterStatus, filterHasEmail, discoverSearch);
       setRecords(data.records || []);
       setPage(1);
     } catch (e) {
@@ -174,10 +176,10 @@ export default function DiscoverPage() {
     } finally {
       setLoading(false);
     }
-  }, [sortBy, sortDir, filterStatus, filterHasEmail]);
+  }, [sortBy, sortDir, filterStatus, filterHasEmail, discoverSearch]);
 
   useEffect(() => { loadSessions(); }, []);
-  useEffect(() => { if (activeSession !== undefined) loadRecords(activeSession); }, [activeSession, sortBy, sortDir, filterStatus, filterHasEmail]);
+  useEffect(() => { if (activeSession !== undefined) loadRecords(activeSession); }, [activeSession, sortBy, sortDir, filterStatus, filterHasEmail, discoverSearch]);
 
   function handleSort(field) {
     if (sortBy === field) setSortDir(sortDir === "desc" ? "asc" : "desc");
@@ -279,6 +281,15 @@ export default function DiscoverPage() {
     setSelected(new Set());
   }
 
+  async function markContactSelected() {
+    for (const website of selected) {
+      await api.updateProspectStatus(website, "dont_contact");
+      ds.updateRecord(website, { status: "dont_contact" });
+    }
+    setRecords(rs => rs.map(r => selected.has(r.website) ? { ...r, status: "dont_contact" } : r));
+    setSelected(new Set());
+  }
+
   async function dismissProspect(website, e) {
     e.stopPropagation();
     await api.deleteProspect(website);
@@ -311,7 +322,7 @@ export default function DiscoverPage() {
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
   }
 
-  const hasFilters = filterStatus !== "all" || filterHasEmail !== "all";
+  const hasFilters = filterStatus !== "all" || filterHasEmail !== "all" || discoverSearch !== "";
   const newCount = records.filter(r => r.status === "new").length;
   const unscannedCount = records.filter(r => ["new", "pending", "queued"].includes(r.status)).length;
 
@@ -627,6 +638,10 @@ export default function DiscoverPage() {
                       title="Scan selected">
                       <ScanLine size={12} /> Scan
                     </button>
+                    <button className="btn btn--sm btn--ghost" onClick={markContactSelected}
+                      title="Mark Don't Contact">
+                      <Ban size={12} /> Don't Contact
+                    </button>
                     <button className="btn btn--sm btn--ghost" onClick={deleteSelected}
                       style={{ color: "#ef4444" }}>
                       <Trash2 size={12} /> Delete
@@ -669,8 +684,17 @@ export default function DiscoverPage() {
                     border: "1px solid var(--border)", borderRadius: "var(--radius)",
                   }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        type="text"
+                        placeholder="Search name or URL..."
+                        value={discoverSearch}
+                        onChange={e => { setSearch(e.target.value); setPage(1); }}
+                        style={{ width: 140, fontSize: 11, padding: "4px 8px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg3)", color: "var(--ink1)" }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 11, color: "var(--ink3)", fontWeight: 600 }}>STATUS</span>
-                      <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+                      <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
                         style={{ fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg3)", color: "var(--ink2)" }}>
                         <option value="all">All</option>
                         <option value="new">New</option>
@@ -681,11 +705,12 @@ export default function DiscoverPage() {
                         <option value="skipped">Skipped</option>
                         <option value="bounced">Bounced (Retry)</option>
                         <option value="cant_deliver">Can't Deliver</option>
+                        <option value="dont_contact">Don't Contact</option>
                       </select>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 11, color: "var(--ink3)", fontWeight: 600 }}>EMAIL</span>
-                      <select value={filterHasEmail} onChange={e => setFilterHasEmail(e.target.value)}
+                      <select value={filterHasEmail} onChange={e => { setFilterHasEmail(e.target.value); setPage(1); }}
                         style={{ fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid var(--border)", background: "var(--bg3)", color: "var(--ink2)" }}>
                         <option value="all">All</option>
                         <option value="yes">Has email</option>
@@ -693,7 +718,7 @@ export default function DiscoverPage() {
                       </select>
                     </div>
                     {hasFilters && (
-                      <button className="btn btn--ghost btn--sm" onClick={() => { setFilterStatus("all"); setFilterHasEmail("all"); }}>
+                      <button className="btn btn--ghost btn--sm" onClick={() => { setFilterStatus("all"); setFilterHasEmail("all"); setSearch(""); setPage(1); }}>
                         Clear
                       </button>
                     )}

@@ -70,6 +70,7 @@ def upsert_scan(data: dict) -> None:
         "total_issues": data.get("totalIssues", 0),
         "issue_counts": data.get("issueCounts", {}),
         "issues": data.get("issues", []),
+        "_tokens": data.get("_tokens"),
         "scanned_at": datetime.now(timezone.utc).isoformat(),
     }
     if email_block:

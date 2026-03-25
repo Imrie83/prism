@@ -25,9 +25,18 @@ async def get_history(
     filter_email: str = "all",
     filter_score_min: int = 0,
     filter_score_max: int = 100,
+    search: str = "",
 ):
-    """Paginated, sortable, filterable list of scan records (no screenshot blobs)."""
+    """Paginated, sortable, filterable list of scan records."""
     all_records = scans_db.all()
+
+    # Apply text search if provided
+    if search:
+        search_lower = search.lower()
+        all_records = [
+            r for r in all_records
+            if search_lower in (r.get("url") or "").lower() or search_lower in (r.get("title") or "").lower()
+        ]
 
     # Filter
     if filter_email == "sent":
@@ -167,6 +176,24 @@ async def update_email_recipient(url: str, recipient: str):
     existing_email = record.get("email") or {}
     scans_db.update(
         {"email": {**existing_email, "recipient": recipient}},
+        ScanRecord.url == url,
+    )
+    return {"ok": True}
+
+
+@router.patch("/api/history/status")
+async def update_history_status(body: dict):
+    """Update status indicator (like dont_contact) for a history record."""
+    url = body.get("url")
+    status = body.get("status")
+    if not url or not status:
+        raise HTTPException(400, "url and status required")
+    record = scans_db.get(ScanRecord.url == url)
+    if not record:
+        raise HTTPException(404, "No record found")
+    existing_email = record.get("email") or {}
+    scans_db.update(
+        {"email": {**existing_email, "status": status}},
         ScanRecord.url == url,
     )
     return {"ok": True}

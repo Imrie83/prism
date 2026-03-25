@@ -502,6 +502,12 @@ export default function ResultsPage() {
 
   const anyResults = store.hasAnyResults();
 
+  let hideTabs = false;
+  if (viewMode === "shallow") {
+    const run = store.getShallowRun(store.shallowActiveRun);
+    if (run?.result?._fromHistory) hideTabs = true;
+  }
+
   // Auto-follow: if email drawer is open and user navigates to a different result,
   // switch drawer to the new result's URL (only if that URL has an email entry)
   function autoFollowEmail(newUrl) {
@@ -543,13 +549,15 @@ export default function ResultsPage() {
             </button>
           </div>
 
-          <ModeTabs
-            active={viewMode}
-            onSelect={setViewMode}
-            shallowCount={store.shallowHistory.length}
-            deepCount={store.deepHistory.length}
-            batchCount={store.batchHistory.length}
-          />
+          {!hideTabs && (
+            <ModeTabs
+              active={viewMode}
+              onSelect={setViewMode}
+              shallowCount={store.shallowHistory.length}
+              deepCount={store.deepHistory.length}
+              batchCount={store.batchHistory.length}
+            />
+          )}
 
           <AnimatePresence mode="wait">
             <motion.div key={viewMode}

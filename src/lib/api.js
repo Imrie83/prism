@@ -90,7 +90,7 @@ export const api = {
   },
 
   // ── History ───────────────────────────────────────────────────────────────
-  async getHistory(page = 1, perPage = 20, sortBy = "scanned_at", sortDir = "desc", filterEmail = "all", filterScoreMin = 0, filterScoreMax = 100) {
+  async getHistory(page = 1, perPage = 20, sortBy = "scanned_at", sortDir = "desc", filterEmail = "all", filterScoreMin = 0, filterScoreMax = 100, search = "") {
     const params = new URLSearchParams({
       page, per_page: perPage,
       sort_by: sortBy, sort_dir: sortDir,
@@ -98,6 +98,7 @@ export const api = {
       filter_score_min: filterScoreMin,
       filter_score_max: filterScoreMax,
     });
+    if (search) params.set("search", search);
     const res = await fetch(`${BASE}/history?${params}`);
     return res.json();
   },
@@ -128,6 +129,15 @@ export const api = {
       `${BASE}/history/update-email-recipient?url=${encodeURIComponent(url)}&recipient=${encodeURIComponent(recipient)}`,
       { method: "POST" }
     );
+  },
+
+  async updateHistoryStatus(url, status) {
+    const res = await fetch(`${BASE}/history/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, status }),
+    });
+    return res.json();
   },
 
   async saveEmailDraft(url, subject, html) {
@@ -171,9 +181,10 @@ export const api = {
     return res.json();
   },
 
-  async getProspects(sessionId, sortBy = "discovered_at", sortDir = "desc", filterStatus = "all", filterHasEmail = "all") {
+  async getProspects(sessionId, sortBy = "discovered_at", sortDir = "desc", filterStatus = "all", filterHasEmail = "all", search = "") {
     const params = new URLSearchParams({ sort_by: sortBy, sort_dir: sortDir, filter_status: filterStatus, filter_has_email: filterHasEmail });
     if (sessionId) params.set("session_id", sessionId);
+    if (search) params.set("search", search);
     const res = await fetch(`${BASE}/discover/prospects?${params}`);
     return res.json();
   },

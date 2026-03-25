@@ -40,11 +40,13 @@ export const useSettingsStore = create(
       historyFilterEmail: "all",
       historyFilterScoreMin: 0,
       historyFilterScoreMax: 100,
+      historySearch: "",
       discoverPerPage: 25,
       discoverSortBy: "discovered_at",
       discoverSortDir: "desc",
       discoverFilterStatus: "all",
       discoverFilterHasEmail: "all",
+      discoverSearch: "",
       // Saved searches: [{ id, keywords, location, label? }]
       savedSearches: [],
       // Previously used keywords for autocomplete suggestions
