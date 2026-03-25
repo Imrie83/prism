@@ -169,16 +169,17 @@ class TestGetFullScan:
 
     def test_get_existing_scan(self, mock_tinydb):
         """Test retrieving a full scan with screenshot."""
-        mock_scans = mock_tinydb[0]
+        mock_scans, records = mock_tinydb
         mock_screenshots = MagicMock()
         mock_screenshots.get.return_value = {"screenshot_b64": "base64data"}
 
-        # Pre-populate scans
-        mock_scans._records = [{
+        # Populate records instead of setting return_value
+        scan_record = {
             "url": "https://example.com",
             "score": 70,
             "title": "Test",
-        }]
+        }
+        records.append(scan_record)
 
         with patch("backend.db.scans_db", mock_scans), \
              patch("backend.db.screenshots_db", mock_screenshots):

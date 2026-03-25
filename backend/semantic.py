@@ -45,56 +45,61 @@ def extract_semantic_groups(html: str) -> str:
         return "section"
 
     def extract_elements(container, depth: int = 0) -> list:
-        if depth > 4:
+        if depth > 5:
             return []
+        name = container.name.lower() if container.name else ""
+
+        # If this is a leaf semantic element, extract it directly
+        text = container.get_text(" ", strip=True)
+        if name in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            return [{"role": "heading", "level": name, "text": text[:300]}] if text else []
+        if name == "p":
+            return [{"role": "paragraph", "text": text[:500]}] if text else []
+        if name == "a":
+            return [
+                {
+                    "role": "link",
+                    "text": text[:200],
+                    "href": container.get("href", "")[:100],
+                }
+            ] if text else []
+        if name == "button" or ("btn" in " ".join(container.get("class", [])).lower()):
+            return [{"role": "button", "text": text[:200]}] if text else []
+        if name == "li":
+            return [{"role": "list-item", "text": text[:300]}] if text else []
+        if name in ("input", "textarea", "select"):
+            return [
+                {
+                    "role": "form-field",
+                    "placeholder": container.get(
+                        "placeholder", container.get("name", container.get("type", "field"))
+                    )[:100],
+                }
+            ]
+        if name == "img":
+            return [
+                {
+                    "role": "image",
+                    "alt": container.get("alt", "[no alt]")[:200],
+                    "src": container.get("src", "")[:80],
+                }
+            ]
+
+        # Otherwise, recurse into children
         elements = []
         for tag in container.find_all(True, recursive=False):
-            if not isinstance(tag, Tag):
-                continue
-            name = tag.name.lower()
-            text = tag.get_text(" ", strip=True)
-            if name in ("h1", "h2", "h3", "h4", "h5", "h6"):
-                if text:
-                    elements.append(
-                        {"role": "heading", "level": name, "text": text[:300]}
-                    )
-            elif name == "p":
-                if text:
-                    elements.append({"role": "paragraph", "text": text[:500]})
-            elif name == "a":
-                if text:
-                    elements.append(
-                        {
-                            "role": "link",
-                            "text": text[:200],
-                            "href": tag.get("href", "")[:100],
-                        }
-                    )
-            elif name == "button" or ("btn" in " ".join(tag.get("class", [])).lower()):
-                if text:
-                    elements.append({"role": "button", "text": text[:200]})
-            elif name in ("input", "textarea", "select"):
-                elements.append(
-                    {
-                        "role": "form-field",
-                        "placeholder": tag.get(
-                            "placeholder", tag.get("name", tag.get("type", "field"))
-                        )[:100],
-                    }
-                )
-            elif name == "img":
-                elements.append(
-                    {
-                        "role": "image",
-                        "alt": tag.get("alt", "[no alt]")[:200],
-                        "src": tag.get("src", "")[:80],
-                    }
-                )
-            elif name == "li":
-                if text:
-                    elements.append({"role": "list-item", "text": text[:300]})
-            elif name in ("div", "span", "section", "article", "ul", "ol"):
+            if isinstance(tag, Tag):
                 elements.extend(extract_elements(tag, depth + 1))
+
+        # Fallback: if a structural container has text but no semantic children tags,
+        # treat the whole container as a paragraph.
+        if (
+            not elements
+            and text
+            and name in ("div", "section", "article", "header", "footer", "nav", "aside", "main", "span")
+        ):
+            elements.append({"role": "paragraph", "text": text[:500]})
+
         return elements
 
     SELECTORS = [

@@ -168,15 +168,13 @@ class TestExtractSemanticGroups:
         assert "HERO" in result
 
     def test_truncates_long_content(self):
-        """Test that very long content is truncated."""
-        long_text = "Word " * 2000
-        html = f'''
-        <html>
-        <body>
-            <p>{long_text}</p>
-        </body>
-        </html>
-        '''
+        """Test that very long output is truncated."""
+        # Create many groups each with text to push output past 6000 chars
+        sections = ""
+        long_para = "This is a very long paragraph that will help us reach the 6000 character limit faster. " * 10
+        for i in range(50):
+            sections += f'<section><h2>Section {i} heading text here so we have lots of content</h2><p>{long_para} Section index: {i}</p></section>\n'
+        html = f'<html><body>{sections}</body></html>'
         result = extract_semantic_groups(html)
         assert "[... truncated ...]" in result
 

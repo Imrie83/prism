@@ -17,6 +17,7 @@ Structure:
 import asyncio
 import json
 import os
+import traceback
 from urllib.parse import urljoin, urlparse
 
 import httpx

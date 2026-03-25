@@ -11,59 +11,63 @@ class TestExtractEmailsFromHtml:
 
     def test_extract_simple_email(self):
         """Test extracting a simple email from HTML."""
-        html = '<p>Contact us at info@example.com</p>'
+        html = '<p>Contact us at info@testdomain.com</p>'
         emails = extract_emails_from_html(html)
-        assert "info@example.com" in emails
+        assert "info@testdomain.com" in emails
 
     def test_extract_multiple_emails(self, sample_html_with_emails):
         """Test extracting multiple emails from HTML."""
-        emails = extract_emails_from_html(sample_html_with_emails)
-        assert "info@example.com" in emails
-        assert "support@example.com" in emails
-        assert "sales@example.com" in emails
+        html = '''
+            <p>info@testdomain.com</p>
+            <p>support@testdomain.com</p>
+            <p>sales@testdomain.com</p>
+        '''
+        emails = extract_emails_from_html(html)
+        assert "info@testdomain.com" in emails
+        assert "support@testdomain.com" in emails
+        assert "sales@testdomain.com" in emails
 
     def test_ignore_blocklisted_domains(self):
         """Test that blocklisted domains are ignored."""
         html = '''
-        <p>Contact info@example.com</p>
+        <p>Contact info@testdomain.com</p>
         <p>Admin admin@placeholder.com</p>
         <p>Sentry sentry@sentry.io</p>
         '''
         emails = extract_emails_from_html(html)
-        assert "info@example.com" in emails
+        assert "info@testdomain.com" in emails
         assert "admin@placeholder.com" not in emails
         assert "sentry@sentry.io" not in emails
 
     def test_prioritize_contact_emails(self):
-        """Test that contact emails are prioritized."""
+        """Test that contact emails are prioritized before generic ones."""
         html = '''
-        <p>Support support@example.com</p>
-        <p>Random user@example.com</p>
-        <p>Contact contact@example.com</p>
+        <p>Random user@testdomain.com</p>
+        <p>Contact contact@testdomain.com</p>
         '''
         emails = extract_emails_from_html(html)
-        # Should still include both, just sorted by priority
         assert len(emails) == 2
-        # Contact/support emails have priority 0, others have priority 1
-        assert "contact@example.com" in emails
-        assert "user@example.com" in emails
+        # contact email has priority 0, user email has priority 1
+        assert "contact@testdomain.com" in emails
+        assert "user@testdomain.com" in emails
+        # Contact-priority emails should sort before generic ones
+        assert emails.index("contact@testdomain.com") < emails.index("user@testdomain.com")
 
     def test_deduplicate_emails(self):
         """Test that duplicate emails are deduplicated."""
         html = '''
-        <p>Contact info@example.com</p>
-        <p>Email info@example.com again</p>
+        <p>Contact info@testdomain.com</p>
+        <p>Email info@testdomain.com again</p>
         '''
         emails = extract_emails_from_html(html)
-        assert emails.count("info@example.com") == 0  # It's a dict lookup
-        assert "info@example.com" in emails
+        assert "info@testdomain.com" in emails
         assert len(emails) == 1
 
     def test_case_insensitive(self):
         """Test that email extraction is case insensitive."""
-        html = '<p>Contact INFO@EXAMPLE.COM</p>'
+        html = '<p>Contact INFO@TESTDOMAIN.COM</p>'
         emails = extract_emails_from_html(html)
-        assert "info@example.com" in emails
+        assert "info@testdomain.com" in emails
 
     def test_no_emails_found(self):
         """Test when no emails are present."""
@@ -79,26 +83,26 @@ class TestExtractEmailsFromHtml:
 
     def test_trailing_period_removed(self):
         """Test that trailing periods are removed from emails."""
-        html = '<p>Contact info@example.com.</p>'
+        html = '<p>Contact info@testdomain.com.</p>'
         emails = extract_emails_from_html(html)
-        assert "info@example.com" in emails
-        assert "info@example.com." not in emails
+        assert "info@testdomain.com" in emails
+        assert "info@testdomain.com." not in emails
 
     def test_all_blocklisted_domains(self, sample_html_with_emails):
         """Test handling of various email formats."""
         html = '''
-        <p>Simple: user@example.com</p>
-        <p>With dots: first.last@example.co.uk</p>
-        <p>With plus: user+tag@example.com</p>
-        <p>With hyphen: user-name@example.com</p>
-        <p>With underscore: user_name@example.com</p>
+        <p>Simple: user@testdomain.com</p>
+        <p>With dots: first.last@testdomain.co.uk</p>
+        <p>With plus: user+tag@testdomain.com</p>
+        <p>With hyphen: user-name@testdomain.com</p>
+        <p>With underscore: user_name@testdomain.com</p>
         '''
         emails = extract_emails_from_html(html)
-        assert "user@example.com" in emails
-        assert "first.last@example.co.uk" in emails
-        assert "user+tag@example.com" in emails
-        assert "user-name@example.com" in emails
-        assert "user_name@example.com" in emails
+        assert "user@testdomain.com" in emails
+        assert "first.last@testdomain.co.uk" in emails
+        assert "user+tag@testdomain.com" in emails
+        assert "user-name@testdomain.com" in emails
+        assert "user_name@testdomain.com" in emails
 
     def test_empty_html(self):
         """Test with empty HTML."""
@@ -109,8 +113,8 @@ class TestExtractEmailsFromHtml:
         """Test extracting emails from script tags."""
         html = '''
         <script>
-            var email = "script@example.com";
+            var email = "script@testdomain.com";
         </script>
         '''
         emails = extract_emails_from_html(html)
-        assert "script@example.com" in emails
+        assert "script@testdomain.com" in emails

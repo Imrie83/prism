@@ -10,7 +10,9 @@ class AISettings(BaseModel):
     ai_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3.5:9b"
+    openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
     screenshot_service_url: str = "http://screenshot:3000"
     max_deep_pages: int = 20
@@ -33,6 +35,9 @@ class EmailSettings(BaseModel):
     ai_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3.5:9b"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
     your_name: str = "Marcin Zielinski"
     your_title: str = "English Localization Specialist"
@@ -49,6 +54,8 @@ class GenerateEmailRequest(BaseModel):
 class SendEmailSettings(BaseModel):
     your_name: str = "Marcin Zielinski"
     from_address: str = ""
+    gmail_address: str = ""
+    gmail_app_password: str = ""
 
 
 class SendEmailRequest(BaseModel):

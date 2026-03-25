@@ -17,23 +17,27 @@ client = TestClient(app)
 class TestDiscoverSearch:
     """Test POST /api/discover/search endpoint."""
 
-    @pytest.mark.asyncio
-    async def test_discover_search_success(self):
+    def test_discover_search_success(self):
         """Test successful discover search."""
+        # Build a proper async context manager mock for client.stream()
         mock_response = MagicMock()
-        mock_response.aiter_text = AsyncMock()
-        mock_response.aiter_text.return_value = [
-            json.dumps({"type": "done", "businesses": [
+
+        async def _aiter_text():
+            yield json.dumps({"type": "done", "businesses": [
                 {"name": "Test Business", "website": "https://test.com", "rating": "4.5"},
                 {"name": "Another Business", "website": "https://another.com"},
-            ]}),
-        ]
+            ]})
+
+        mock_response.aiter_text = _aiter_text
         mock_response.raise_for_status = MagicMock()
 
-        mock_client = AsyncMock()
-        mock_client.stream.return_value.__aenter__.return_value = mock_response
-        mock_client.stream.return_value.__aexit__ = AsyncMock(return_value=None)
-        mock_client.__aenter__.return_value = mock_client
+        stream_cm = MagicMock()
+        stream_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        stream_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_client = MagicMock()
+        mock_client.stream.return_value = stream_cm
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
@@ -50,7 +54,29 @@ class TestDiscoverSearch:
 
     def test_discover_search_missing_website(self):
         """Test discover search skips businesses without websites."""
-        with patch("backend.routes_discover.scans_db") as mock_scans:
+        # Build a proper async context manager mock for client.stream()
+        mock_response = MagicMock()
+
+        async def _aiter_text_empty():
+            yield json.dumps({"type": "done", "businesses": [
+                {"name": "No URL Business"},
+            ]})
+
+        mock_response.aiter_text = _aiter_text_empty
+        mock_response.raise_for_status = MagicMock()
+
+        stream_cm = MagicMock()
+        stream_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        stream_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_client = MagicMock()
+        mock_client.stream.return_value = stream_cm
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("backend.routes_discover.scans_db") as mock_scans, \
+             patch("backend.routes_discover.prospects_db"):
             mock_scans.all.return_value = []
             response = client.post(
                 "/api/discover/search",

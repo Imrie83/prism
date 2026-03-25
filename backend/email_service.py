@@ -569,6 +569,10 @@ async def api_send_email(req: SendEmailRequest):
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
+    s = req.settings
+    if not s.gmail_address or not s.gmail_app_password:
+        raise HTTPException(400, "Gmail address and app password are required")
+
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = req.subject

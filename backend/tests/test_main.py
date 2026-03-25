@@ -315,7 +315,8 @@ class TestAgentChatEndpoint:
 class TestTaskRegistry:
     """Test task registry functionality."""
 
-    def test_register_task(self):
+    @pytest.mark.asyncio
+    async def test_register_task(self):
         """Test registering a task."""
         import asyncio
 
@@ -328,7 +329,8 @@ class TestTaskRegistry:
         # Clean up
         unregister_task("test-task")
 
-    def test_unregister_task(self):
+    @pytest.mark.asyncio
+    async def test_unregister_task(self):
         """Test unregistering a task."""
         import asyncio
 
@@ -339,7 +341,8 @@ class TestTaskRegistry:
         unregister_task("test-task")
         assert "test-task" not in ACTIVE_TASKS
 
-    def test_cancel_task(self):
+    @pytest.mark.asyncio
+    async def test_cancel_task(self):
         """Test cancelling a task."""
         import asyncio
 
@@ -369,7 +372,8 @@ class TestListTasksEndpoint:
         data = response.json()
         assert data["active"] == []
 
-    def test_list_tasks_with_active(self):
+    @pytest.mark.asyncio
+    async def test_list_tasks_with_active(self):
         """Test listing active tasks."""
         import asyncio
 
@@ -388,7 +392,7 @@ class TestListTasksEndpoint:
             # Clean up
             task.cancel()
             try:
-                asyncio.get_event_loop().run_until_complete(task)
+                pass
             except:
                 pass
             ACTIVE_TASKS.clear()
@@ -397,7 +401,8 @@ class TestListTasksEndpoint:
 class TestCancelEndpoint:
     """Test cancel endpoint."""
 
-    def test_cancel_existing_task(self):
+    @pytest.mark.asyncio
+    async def test_cancel_existing_task(self):
         """Test cancelling an existing task."""
         import asyncio
 
@@ -414,7 +419,6 @@ class TestCancelEndpoint:
         finally:
             try:
                 task.cancel()
-                asyncio.get_event_loop().run_until_complete(task)
             except:
                 pass
             ACTIVE_TASKS.pop("cancel-test", None)
