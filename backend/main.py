@@ -5,7 +5,7 @@ Run with: python -m uvicorn main:app --reload --port 8000
 Structure:
   main.py            — app init, core scan/crawl/agent routes
   models.py          — Pydantic request/response models
-  db.py              — TinyDB setup, migration, helpers
+  db.py              — Motor/MongoDB storage layer
   ai_client.py       — Ollama / OpenAI / Claude provider clients
   prompts.py         — Audit, email, and agent prompt strings + builders
   semantic.py        — HTML → semantic groups extractor
@@ -27,13 +27,14 @@ from fastapi.responses import StreamingResponse
 
 from .ai_client import (
     call_ai,
+    call_ai_batch,
     call_ollama,
     call_openai,
     call_claude,
     call_ollama_chat,
     _extract_json,
 )
-from .db import upsert_scan, get_scheduled_emails, update_email
+from .db import upsert_scan, ensure_indexes
 from .models import (
     AnalyzeRequest,
     CrawlRequest,
@@ -44,7 +45,12 @@ from .routes_history import router as history_router
 from .routes_discover import router as discover_router
 from .utils import extract_emails_from_html
 
-app = FastAPI(title="Prism Audit API", version="1.5.0")
+app = FastAPI(title="Prism Audit API", version="1.7.0")
+
+
+@app.on_event("startup")
+async def startup_event():
+    await ensure_indexes()
 
 
 app.add_middleware(
@@ -350,7 +356,7 @@ async def _do_analyze(
 
     if req.scan_mode in ("shallow", "batch"):
         try:
-            upsert_scan(data)
+            await upsert_scan(data)
         except Exception as db_err:
             print(f"[db] ⚠ save failed: {db_err}")
     return data
@@ -449,3 +455,123 @@ async def agent_chat(req: AgentChatRequest):
     except Exception as e:
         print(f"[agent-chat] ERROR:\n{traceback.format_exc()}")
         raise HTTPException(502, f"Agent error: {e}")
+
+
+# ── Batch scan endpoint ────────────────────────────────────────────────────────
+
+from .models import BatchAnalyzeRequest
+
+
+@app.post("/api/batch-analyze")
+async def batch_analyze(req: BatchAnalyzeRequest):
+    """Submit multiple URLs as a single Anthropic batch (50% cost saving).
+    Returns NDJSON: keepalives then a final JSON with results keyed by URL.
+    For Ollama/OpenAI falls back to sequential processing.
+    """
+    import time
+
+    task = asyncio.create_task(_do_batch_analyze(req))
+
+    async def stream():
+        while not task.done():
+            yield b"\n"
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=15.0)
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                break
+        try:
+            result = task.result()
+            yield json.dumps(result).encode() + b"\n"
+        except Exception as e:
+            print(f"[batch-analyze] FAILED:\n{traceback.format_exc()}")
+            yield json.dumps({"error": str(e)}).encode() + b"\n"
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+async def _do_batch_analyze(req) -> dict:
+    import time
+
+    t0 = time.monotonic()
+    screenshot_svc = os.environ.get(
+        "SCREENSHOT_SERVICE_URL", req.settings.screenshot_service_url
+    )
+    vision = req.vision_mode
+
+    print(f"[batch-analyze] ═══ START {len(req.urls)} URLs provider={req.settings.ai_provider}")
+
+    # Step 1: Take all screenshots in parallel
+    async def capture(url: str):
+        try:
+            shot, html, height = await take_screenshot(url, screenshot_svc)
+            return url, shot, html, height, None
+        except Exception as e:
+            return url, None, "", 0, str(e)
+
+    captures = await asyncio.gather(*[capture(u) for u in req.urls])
+
+    # Step 2: Build batch AI requests
+    batch_requests = []
+    capture_map: dict = {}
+    for url, shot, html, height, err in captures:
+        if err:
+            print(f"[batch-analyze] ⚠ screenshot failed for {url}: {err}")
+            continue
+        emails_found = extract_emails_from_html(html)
+        system_prompt = build_audit_system_prompt(vision_mode=vision, scan_mode=req.scan_mode)
+        prompt = build_audit_user_prompt(html, vision_mode=vision)
+        images = [shot] if shot else []
+        capture_map[url] = {"shot": shot, "html": html, "emails_found": emails_found}
+        batch_requests.append({
+            "custom_id": url,
+            "system": system_prompt,
+            "prompt": prompt,
+            "images": images,
+        })
+
+    if not batch_requests:
+        return {"results": {}, "error": "All screenshots failed"}
+
+    print(f"[batch-analyze] submitting {len(batch_requests)} AI requests")
+
+    # Step 3: Run batch (Claude) or sequential (others)
+    ai_results = await call_ai_batch(batch_requests, req.settings)
+
+    # Step 4: Post-process and save each result
+    results: dict = {}
+    for url, data in ai_results.items():
+        if data.get("error"):
+            results[url] = {"error": data["error"], "url": url}
+            continue
+
+        cap = capture_map.get(url, {})
+        usage = data.pop("_usage", {})
+        data.setdefault("score", 50)
+        data.setdefault("issues", [])
+        data.setdefault("summary", "")
+        data["issueCounts"] = {
+            "high": sum(1 for i in data["issues"] if i.get("severity") == "high"),
+            "medium": sum(1 for i in data["issues"] if i.get("severity") == "medium"),
+            "low": sum(1 for i in data["issues"] if i.get("severity") == "low"),
+        }
+        if "totalIssues" not in data:
+            c = data["issueCounts"]
+            data["totalIssues"] = c["high"] + c["medium"] + c["low"]
+        data["screenshot"] = cap.get("shot", "")
+        data["url"] = url
+        data["scan_mode"] = req.scan_mode
+        data["_tokens"] = usage
+        data["emails_found"] = cap.get("emails_found", [])
+
+        try:
+            await upsert_scan(data)
+        except Exception as db_err:
+            print(f"[db] ⚠ save failed for {url}: {db_err}")
+
+        results[url] = data
+
+    elapsed = time.monotonic() - t0
+    print(f"[batch-analyze] ═══ DONE {len(results)} results in {elapsed:.1f}s")
+    return {"results": results}

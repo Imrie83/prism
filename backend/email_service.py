@@ -14,7 +14,7 @@ import traceback
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from .ai_client import call_ai, call_claude, call_openai, call_ollama, _extract_json
+from .ai_client import call_ai, call_claude, call_openai, call_ollama, _extract_json, call_ai_batch
 from .db import update_email
 import os
 
@@ -28,6 +28,7 @@ from .models import (
     SendEmailRequest,
     ScheduleEmailRequest,
     CancelScheduleRequest,
+    BatchGenerateEmailRequest,
 )
 from .prompts import EMAIL_SYSTEM
 
@@ -273,26 +274,127 @@ async def _translate_scan_for_card(scan: dict, ai_settings: AISettings) -> dict:
     return scan_jp
 
 
-async def _do_generate_email(
-    prompt: str,
-    system: str,
-    ai_settings: AISettings,
-    report_card_html: str | None = None,
-    sender: dict | None = None,
-) -> dict:
-    import time
 
-    t0 = time.monotonic()
-    print(f"[generate-email]   → calling AI provider={ai_settings.ai_provider}")
-    data = await call_ai(prompt, system, ai_settings)
-    usage = data.pop("_usage", {})
+# ── Shared email helpers ──────────────────────────────────────────────────────
 
-    subject = data.get("subject", "")
-    jp_paras = data.get("jp_paragraphs", [])
-    en_paras = data.get("en_paragraphs", [])
-    print(
-        f"[generate-email] ═══ DONE in {time.monotonic() - t0:.1f}s | tokens={usage.get('total_tokens', '?')} | jp={len(jp_paras)} en={len(en_paras)} paras"
+
+def build_email_prompt(scan: dict) -> str:
+    """Build the AI prompt for a cold outreach email from a scan result.
+
+    Single source of truth — used by both single and batch email generation.
+    """
+    url = scan.get("url", "their website")
+    score = scan.get("score", "N/A")
+    summary = scan.get("summary", "")
+    title = scan.get("title", "")
+    issues = scan.get("issues", [])
+
+    issue_types_set = {i.get("type", "") for i in issues}
+    severity_counts: dict[str, int] = {}
+    for iss in issues:
+        sev = iss.get("severity", "medium")
+        severity_counts[sev] = severity_counts.get(sev, 0) + 1
+
+    positives = []
+    if "broken_layout" not in issue_types_set and "poor_contrast" not in issue_types_set:
+        positives.append("clean, well-structured visual layout")
+    if "image_quality" not in issue_types_set:
+        positives.append("good quality photography or imagery")
+    if "cluttered_layout" not in issue_types_set:
+        positives.append("good use of whitespace and clear organisation")
+    if "visual_hierarchy" not in issue_types_set:
+        positives.append("clear visual hierarchy and readable structure")
+    if severity_counts.get("high", 0) == 0:
+        positives.append("solid technical foundation with no critical issues")
+    if score and int(score) >= 60:
+        positives.append("site that already shows real care and attention")
+    positives_text = (
+        ", ".join(positives[:2])
+        if positives
+        else "a site that clearly reflects genuine expertise in its field"
     )
+
+    opportunity_hints = []
+    for iss in issues[:8]:
+        loc = iss.get("location", "")
+        itype = iss.get("type", "")
+        if itype in ("untranslated_nav_ui", "untranslated_body", "untranslated_japanese") and loc:
+            opportunity_hints.append(
+                f"making navigation and key content accessible to English readers (currently Japanese-only in the {loc})"
+            )
+        elif itype in ("machine_translation", "grammar_error", "awkward_phrasing") and loc:
+            opportunity_hints.append(
+                "replacing stilted auto-translated text with natural English that builds trust"
+            )
+        elif itype in ("weak_cta", "missing_cta_visual") and loc:
+            opportunity_hints.append(
+                "adding a clear English call-to-action so international visitors know how to book or contact"
+            )
+        elif itype in ("trust_signals", "social_proof", "contact_accessibility"):
+            opportunity_hints.append(
+                "adding English trust signals (reviews, contact info) that Western visitors expect"
+            )
+        elif itype in ("mobile_usability", "navigation_ux"):
+            opportunity_hints.append(
+                "improving the mobile and navigation experience for international visitors"
+            )
+        if len(opportunity_hints) >= 2:
+            break
+    hints_text = (
+        "; and ".join(opportunity_hints[:2])
+        if opportunity_hints
+        else "making the site fully navigable and readable for English-speaking visitors"
+    )
+
+    return f"""Write a bilingual cold outreach email for this Japanese business. Follow your system prompt structure precisely.
+
+SITE DETAILS:
+  URL: {url}
+  Page title: {title or "unknown"}
+  English-readiness score: {score}/100
+  What the site is about: {summary}
+
+GENUINE POSITIVES to draw the compliment from (use one of these specifically):
+  {positives_text}
+
+SPECIFIC OPPORTUNITY to mention (frame as upside — what international visitors could gain):
+  {hints_text}
+
+SERVICES TO REFERENCE (choose the 2 most relevant to this site's situation):
+  - English translation and localisation of Japanese website content
+  - Natural English copywriting (replacing machine-translated text)
+  - Full web development and redesign if they want to go further
+  - UX improvements for international visitors
+
+REMEMBER:
+- Open with a formal self-introduction, not a compliment
+- Acknowledge their time is valuable before making your pitch
+- The compliment must be SPECIFIC to this site, not generic
+- Keep English under 150 words total
+- One clear ask at the end — nothing more
+- The personalised audit report is embedded directly in this email below the message — do NOT say it is "available at" any website or URL. Say something like "I've included a personalised report below" or "you'll find a brief audit below this message"
+
+Return the bilingual email as JSON following your system prompt exactly."""
+
+
+def build_email_html(ai_data: dict, report_card_html: str | None, sender: dict) -> dict:
+    """Render the final email HTML from AI response data.
+
+    Single source of truth — used by both single and batch email generation.
+
+    Args:
+        ai_data: parsed AI response (subject, jp_paragraphs, en_paragraphs).
+                 _usage key is popped and returned separately.
+        report_card_html: pre-rendered audit card HTML, or None.
+        sender: dict with keys name, title, email, website.
+
+    Returns:
+        {"subject": str, "html": str, "_tokens": dict}
+    """
+    usage = ai_data.pop("_usage", {})
+    subject = ai_data.get("subject", "")
+    jp_paras = ai_data.get("jp_paragraphs", [])
+    en_paras = ai_data.get("en_paragraphs", [])
 
     s = sender or {}
     name = s.get("name", "")
@@ -369,6 +471,28 @@ async def _do_generate_email(
     return {"subject": subject, "html": html, "_tokens": usage}
 
 
+async def _do_generate_email(
+    prompt: str,
+    system: str,
+    ai_settings: AISettings,
+    report_card_html: str | None = None,
+    sender: dict | None = None,
+) -> dict:
+    import time
+
+    t0 = time.monotonic()
+    print(f"[generate-email]   → calling AI provider={ai_settings.ai_provider}")
+    data = await call_ai(prompt, system, ai_settings)
+    jp_paras = data.get("jp_paragraphs", [])
+    en_paras = data.get("en_paragraphs", [])
+    print(
+        f"[generate-email] ═══ DONE in {time.monotonic() - t0:.1f}s | "
+        f"tokens={data.get('_usage', {}).get('total_tokens', '?')} | "
+        f"jp={len(jp_paras)} en={len(en_paras)} paras"
+    )
+    return build_email_html(data, report_card_html, sender or {})
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 
@@ -383,90 +507,8 @@ async def generate_email(req: GenerateEmailRequest):
         email=s.your_email,
     )
     scan = req.scan_result
-    url = scan.get("url", "their website")
-    score = scan.get("score", "N/A")
-    summary = scan.get("summary", "")
-    title = scan.get("title", "")
-    issues = scan.get("issues", [])
 
-    # Infer positives from what ISN'T broken
-    issue_types_set = {i.get("type", "") for i in issues}
-    severity_counts: dict[str, int] = {}
-    for iss in issues:
-        sev = iss.get("severity", "medium")
-        severity_counts[sev] = severity_counts.get(sev, 0) + 1
-
-    positives = []
-    if (
-        "broken_layout" not in issue_types_set
-        and "poor_contrast" not in issue_types_set
-    ):
-        positives.append("clean, well-structured visual layout")
-    if "image_quality" not in issue_types_set:
-        positives.append("good quality photography or imagery")
-    if "cluttered_layout" not in issue_types_set:
-        positives.append("good use of whitespace and clear organisation")
-    if "visual_hierarchy" not in issue_types_set:
-        positives.append("clear visual hierarchy and readable structure")
-    if severity_counts.get("high", 0) == 0:
-        positives.append("solid technical foundation with no critical issues")
-    if score and int(score) >= 60:
-        positives.append("site that already shows real care and attention")
-    positives_text = (
-        ", ".join(positives[:2])
-        if positives
-        else "a site that clearly reflects genuine expertise in its field"
-    )
-
-    # Build opportunity hints
-    opportunity_hints = []
-    for iss in issues[:8]:
-        loc = iss.get("location", "")
-        itype = iss.get("type", "")
-        if (
-            itype
-            in ("untranslated_nav_ui", "untranslated_body", "untranslated_japanese")
-            and loc
-        ):
-            opportunity_hints.append(
-                f"making navigation and key content accessible to English readers (currently Japanese-only in the {loc})"
-            )
-        elif (
-            itype in ("machine_translation", "grammar_error", "awkward_phrasing")
-            and loc
-        ):
-            opportunity_hints.append(
-                "replacing stilted auto-translated text with natural English that builds trust"
-            )
-        elif itype in ("weak_cta", "missing_cta_visual") and loc:
-            opportunity_hints.append(
-                "adding a clear English call-to-action so international visitors know how to book or contact"
-            )
-        elif itype in ("trust_signals", "social_proof", "contact_accessibility"):
-            opportunity_hints.append(
-                "adding English trust signals (reviews, contact info) that Western visitors expect"
-            )
-        elif itype in ("mobile_usability", "navigation_ux"):
-            opportunity_hints.append(
-                "improving the mobile and navigation experience for international visitors"
-            )
-        if len(opportunity_hints) >= 2:
-            break
-    hints_text = (
-        "; and ".join(opportunity_hints[:2])
-        if opportunity_hints
-        else "making the site fully navigable and readable for English-speaking visitors"
-    )
-
-    ai_settings = AISettings(
-        ai_provider=s.ai_provider,
-        ollama_base_url=s.ollama_base_url,
-        ollama_model=s.ollama_model,
-        openai_api_key=s.openai_api_key,
-        anthropic_api_key=s.anthropic_api_key,
-        anthropic_model=s.anthropic_model,
-    )
-
+    # Deep scans: translate card text to Japanese before rendering
     scan_mode = scan.get("scan_mode", "shallow")
     if scan_mode == "deep":
         audit_settings = AISettings(
@@ -484,41 +526,20 @@ async def generate_email(req: GenerateEmailRequest):
         scan_for_card = scan
 
     report_card_html = build_report_card_html(scan_for_card)
+    prompt = build_email_prompt(scan)
 
-    prompt = f"""Write a bilingual cold outreach email for this Japanese business. Follow your system prompt structure precisely.
-
-SITE DETAILS:
-  URL: {url}
-  Page title: {title or "unknown"}
-  English-readiness score: {score}/100
-  What the site is about: {summary}
-
-GENUINE POSITIVES to draw the compliment from (use one of these specifically):
-  {positives_text}
-
-SPECIFIC OPPORTUNITY to mention (frame as upside — what international visitors could gain):
-  {hints_text}
-
-SERVICES TO REFERENCE (choose the 2 most relevant to this site's situation):
-  - English translation and localisation of Japanese website content
-  - Natural English copywriting (replacing machine-translated text)
-  - Full web development and redesign if they want to go further
-  - UX improvements for international visitors
-
-REMEMBER:
-- Open with a formal self-introduction, not a compliment
-- Acknowledge their time is valuable before making your pitch
-- The compliment must be SPECIFIC to this site, not generic
-- Keep English under 150 words total
-- One clear ask at the end — nothing more
-- The personalised audit report is embedded directly in this email below the message — do NOT say it is "available at" any website or URL. Say something like "I've included a personalised report below" or "you'll find a brief audit below this message"
-
-Return the bilingual email as JSON following your system prompt exactly."""
-
-    print(
-        f"[generate-email] ═══ START url={url} score={score} provider={ai_settings.ai_provider}"
+    ai_settings = AISettings(
+        ai_provider=s.ai_provider,
+        ollama_base_url=s.ollama_base_url,
+        ollama_model=s.ollama_model,
+        openai_api_key=s.openai_api_key,
+        anthropic_api_key=s.anthropic_api_key,
+        anthropic_model=s.anthropic_model,
     )
-    print(f"[generate-email]   opportunity hints: {hints_text}")
+
+    url = scan.get("url", "?")
+    score = scan.get("score", "?")
+    print(f"[generate-email] ═══ START url={url} score={score} provider={ai_settings.ai_provider}")
     print(f"[generate-email]   report card html: {len(report_card_html)} chars")
 
     async def stream():
@@ -576,9 +597,7 @@ async def api_send_email(req: SendEmailRequest):
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = req.subject
-        visible_from = (
-            s.from_address.strip() if s.from_address.strip() else s.gmail_address
-        )
+        visible_from = s.from_address.strip() if s.from_address.strip() else s.gmail_address
         msg["From"] = f"{s.your_name} <{visible_from}>"
         msg["To"] = req.to
         msg.attach(MIMEText(req.html, "html", "utf-8"))
@@ -594,7 +613,7 @@ async def api_send_email(req: SendEmailRequest):
             smtp.sendmail(s.gmail_address, req.to, msg.as_string())
 
         try:
-            update_email(req.url, req.to, req.subject, req.html)
+            await update_email(req.url, req.to, req.subject, req.html)
         except Exception as db_err:
             print(f"[db] ⚠ email save failed: {db_err}")
         return {"ok": True}
@@ -606,26 +625,117 @@ async def api_send_email(req: SendEmailRequest):
 
 from .db import schedule_email, cancel_scheduled_email
 
+
 @router.post("/api/schedule-email")
 async def api_schedule_email(req: ScheduleEmailRequest):
     try:
-        schedule_email(
+        await schedule_email(
             url=req.url,
             recipient=req.to,
             subject=req.subject,
             html=req.html,
             scheduled_at=req.scheduled_at,
-            settings=req.settings.model_dump()
+            settings=req.settings.model_dump(),
         )
         return {"ok": True}
     except Exception as e:
         raise HTTPException(502, f"Failed to schedule: {e}")
 
+
 @router.post("/api/cancel-scheduled-email")
 async def api_cancel_scheduled_email(req: CancelScheduleRequest):
     try:
-        cancel_scheduled_email(req.url)
+        await cancel_scheduled_email(req.url)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(502, f"Failed to cancel schedule: {e}")
 
+
+# ── Batch email generation ─────────────────────────────────────────────────────
+
+
+@router.post("/api/batch-generate-email")
+async def batch_generate_email(req: BatchGenerateEmailRequest):
+    """Generate emails for multiple scan results using Anthropic Batch API (50% cost).
+    Streams keepalives then final NDJSON result keyed by URL.
+    For Ollama/OpenAI falls back to sequential.
+    """
+    task = asyncio.create_task(_do_batch_generate_email(req))
+
+    async def stream():
+        while not task.done():
+            yield b"\n"
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=15.0)
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                break
+        try:
+            result = task.result()
+            yield json.dumps(result).encode() + b"\n"
+        except Exception as e:
+            print(f"[batch-email] FAILED:\n{traceback.format_exc()}")
+            yield json.dumps({"error": str(e)}).encode() + b"\n"
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+async def _do_batch_generate_email(req: BatchGenerateEmailRequest) -> dict:
+    import time
+
+    t0 = time.monotonic()
+    s = req.settings
+    system = EMAIL_SYSTEM.format(
+        name=s.your_name,
+        title=s.your_title,
+        website=s.your_website,
+        email=s.your_email,
+    )
+    ai_settings = AISettings(
+        ai_provider=s.ai_provider,
+        ollama_base_url=s.ollama_base_url,
+        ollama_model=s.ollama_model,
+        openai_api_key=s.openai_api_key,
+        anthropic_api_key=s.anthropic_api_key,
+        anthropic_model=s.anthropic_model,
+    )
+    sender = {
+        "name": s.your_name,
+        "title": s.your_title,
+        "email": s.your_email,
+        "website": s.your_website,
+    }
+
+    # Build batch requests — reuse the same prompt builder as single email
+    batch_requests = []
+    card_map: dict[str, str] = {}  # url -> report_card_html
+
+    for item in req.items:
+        scan = item.scan_result
+        url = scan.get("url", "unknown")
+        card_map[url] = build_report_card_html(scan)
+        batch_requests.append({
+            "custom_id": url,
+            "system": system,
+            "prompt": build_email_prompt(scan),  # ← same function as single path
+            "images": None,
+        })
+
+    print(f"[batch-email] ═══ START {len(batch_requests)} emails provider={ai_settings.ai_provider}")
+    ai_results = await call_ai_batch(batch_requests, ai_settings)
+
+    # Format results — reuse the same HTML builder as single path
+    results: dict = {}
+    for url, data in ai_results.items():
+        if data.get("error"):
+            results[url] = {"error": data["error"], "url": url}
+            continue
+        try:
+            results[url] = build_email_html(data, card_map.get(url), sender)
+        except Exception as e:
+            results[url] = {"error": str(e), "url": url}
+
+    elapsed = time.monotonic() - t0
+    print(f"[batch-email] ═══ DONE {len(results)} emails in {elapsed:.1f}s")
+    return {"results": results}

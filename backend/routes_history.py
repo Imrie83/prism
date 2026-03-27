@@ -5,15 +5,30 @@ History API routes — /api/history/*
 from fastapi import APIRouter, HTTPException
 
 from .db import (
-    scans_db,
-    screenshots_db,
-    ScanRecord,
-    upsert_scan,
+    list_scans,
     get_full_scan,
+    delete_scan,
+    toggle_got_response,
+    set_dont_contact,
+    save_email_draft,
+    update_email_recipient,
+    save_email_subject,
+    upsert_scan,
+    get_email_statuses,
+    get_global_settings,
+    update_global_settings,
+    scans_col,
 )
 from .models import SaveEmailDraftRequest
 
 router = APIRouter()
+
+SORT_MAP = {
+    "scanned_at": "scanned_at",
+    "score": "score",
+    "total_issues": "total_issues",
+    "email_sent": "email.sent_at",
+}
 
 
 @router.get("/api/history")
@@ -28,56 +43,20 @@ async def get_history(
     search: str = "",
 ):
     """Paginated, sortable, filterable list of scan records."""
-    all_records = scans_db.all()
-
-    # Apply text search if provided
-    if search:
-        search_lower = search.lower()
-        all_records = [
-            r for r in all_records
-            if search_lower in (r.get("url") or "").lower() or search_lower in (r.get("title") or "").lower()
-        ]
-
-    # Filter
-    if filter_email == "sent":
-        all_records = [r for r in all_records if r.get("email", {}).get("sent_at")]
-    elif filter_email == "not_sent":
-        all_records = [r for r in all_records if not r.get("email", {}).get("sent_at")]
-    elif filter_email == "got_response":
-        all_records = [r for r in all_records if r.get("email", {}).get("got_response")]
-    elif filter_email == "bounced":
-        all_records = [r for r in all_records if r.get("email", {}).get("status") == "bounced"]
-    elif filter_email == "cant_deliver":
-        all_records = [r for r in all_records if r.get("email", {}).get("status") == "cant_deliver"]
-    elif filter_email == "scheduled":
-        all_records = [r for r in all_records if r.get("email", {}).get("status") == "scheduled"]
-
-    if filter_score_min > 0 or filter_score_max < 100:
-        all_records = [
-            r
-            for r in all_records
-            if filter_score_min <= (r.get("score") or 0) <= filter_score_max
-        ]
-
-    # Sort
-    reverse = sort_dir == "desc"
-    if sort_by == "score":
-        all_records.sort(key=lambda r: r.get("score") or 0, reverse=reverse)
-    elif sort_by == "total_issues":
-        all_records.sort(key=lambda r: r.get("total_issues") or 0, reverse=reverse)
-    elif sort_by == "email_sent":
-        all_records.sort(
-            key=lambda r: r.get("email", {}).get("sent_at") or "", reverse=reverse
-        )
-    else:
-        all_records.sort(key=lambda r: r.get("scanned_at", ""), reverse=reverse)
-
-    total = len(all_records)
-    start = (page - 1) * per_page
-    page_records = all_records[start : start + per_page]
-
+    mongo_sort = SORT_MAP.get(sort_by, "scanned_at")
+    mongo_dir = -1 if sort_dir == "desc" else 1
+    records, total = await list_scans(
+        page=page,
+        per_page=per_page,
+        sort_by=mongo_sort,
+        sort_dir=mongo_dir,
+        filter_email=filter_email,
+        filter_score_min=filter_score_min,
+        filter_score_max=filter_score_max,
+        search=search,
+    )
     slim = []
-    for r in page_records:
+    for r in records:
         slim.append(
             {
                 "url": r.get("url"),
@@ -104,22 +83,20 @@ async def get_history(
 @router.get("/api/settings")
 async def get_settings():
     """Return global server-side settings."""
-    from .db import get_global_settings
-    return get_global_settings()
+    return await get_global_settings()
 
 
 @router.post("/api/settings")
 async def update_settings(body: dict):
     """Update global server-side settings."""
-    from .db import update_global_settings
-    update_global_settings(body)
+    await update_global_settings(body)
     return {"ok": True}
 
 
 @router.get("/api/history/check")
 async def check_history(url: str):
     """Check if a URL has been scanned. Returns lightweight record summary."""
-    record = scans_db.get(ScanRecord.url == url)
+    record = await scans_col().find_one({"url": url}, {"_id": 0, "issues": 0})
     if not record:
         return {"exists": False}
     return {
@@ -142,7 +119,7 @@ async def check_history(url: str):
 @router.get("/api/history/entry")
 async def get_history_entry(url: str):
     """Full scan record including screenshot — for rehydrating the results page."""
-    record = get_full_scan(url)
+    record = await get_full_scan(url)
     if not record:
         raise HTTPException(404, "No record found for this URL")
     return record
@@ -151,50 +128,31 @@ async def get_history_entry(url: str):
 @router.patch("/api/history/response")
 async def toggle_response(url: str):
     """Toggle got_response flag."""
-    record = scans_db.get(ScanRecord.url == url)
-    if not record or not record.get("email"):
-        raise HTTPException(404, "No email record found for this URL")
-    current = record["email"].get("got_response", False)
-    email_block = {**record["email"], "got_response": not current}
-    scans_db.update({"email": email_block}, ScanRecord.url == url)
-    return {"got_response": not current}
+    new_val = await toggle_got_response(url)
+    return {"got_response": new_val}
 
 
 @router.delete("/api/history/entry")
 async def delete_history_entry(url: str):
     """Delete a scan record and its screenshot."""
-    removed = scans_db.remove(ScanRecord.url == url)
-    screenshots_db.remove(ScanRecord.url == url)
-    if not removed:
+    ok = await delete_scan(url)
+    if not ok:
         raise HTTPException(404, "No record found for this URL")
     return {"ok": True}
 
 
 @router.post("/api/history/save-email")
-async def save_email_draft(url: str, subject: str, body: SaveEmailDraftRequest):
+async def save_email_draft_route(url: str, subject: str, body: SaveEmailDraftRequest):
     """Save a generated email draft (not yet sent)."""
-    record = scans_db.get(ScanRecord.url == url)
-    if not record:
-        raise HTTPException(404, "No scan record for this URL")
-    existing_email = record.get("email") or {}
-    scans_db.update(
-        {"email": {**existing_email, "subject": subject, "html": body.html}},
-        ScanRecord.url == url,
-    )
+    await save_email_subject(url, subject)
+    await save_email_draft(url, body.html)
     return {"ok": True}
 
 
 @router.post("/api/history/update-email-recipient")
-async def update_email_recipient(url: str, recipient: str):
+async def update_email_recipient_route(url: str, recipient: str):
     """Update recipient address when user edits it in the email drawer."""
-    record = scans_db.get(ScanRecord.url == url)
-    if not record:
-        return {"ok": False}
-    existing_email = record.get("email") or {}
-    scans_db.update(
-        {"email": {**existing_email, "recipient": recipient}},
-        ScanRecord.url == url,
-    )
+    await update_email_recipient(url, recipient)
     return {"ok": True}
 
 
@@ -205,14 +163,7 @@ async def update_history_status(body: dict):
     status = body.get("status")
     if not url:
         raise HTTPException(400, "url required")
-    record = scans_db.get(ScanRecord.url == url)
-    if not record:
-        raise HTTPException(404, "No record found")
-    existing_email = record.get("email") or {}
-    scans_db.update(
-        {"email": {**existing_email, "status": status}},
-        ScanRecord.url == url,
-    )
+    await set_dont_contact(url, status)
     return {"ok": True}
 
 
@@ -220,7 +171,7 @@ async def update_history_status(body: dict):
 async def save_deep_scan(body: dict):
     """Explicitly save a deep scan to history."""
     try:
-        upsert_scan(body)
+        await upsert_scan(body)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(500, str(e))
@@ -229,7 +180,19 @@ async def save_deep_scan(body: dict):
 @router.get("/api/history/full-check")
 async def check_url_in_history(url: str):
     """Full record check including email state (used by batch pre-scan check)."""
-    record = scans_db.get(ScanRecord.url == url)
+    record = await scans_col().find_one({"url": url}, {"_id": 0, "issues": 0})
     if not record:
         return {"exists": False}
     return {"exists": True, "record": record}
+
+
+@router.get("/api/email-status")
+async def get_email_status_bulk(urls: str):
+    """Poll email statuses for a comma-separated list of URLs.
+    Used by the frontend to update status without a full page refresh.
+    """
+    url_list = [u.strip() for u in urls.split(",") if u.strip()]
+    if not url_list:
+        return {}
+    statuses = await get_email_statuses(url_list)
+    return statuses

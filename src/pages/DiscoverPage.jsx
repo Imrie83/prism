@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState, useMemo } from "react";
 import { useDiscoverStore } from "../stores/discoverStore";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -15,6 +15,7 @@ import { useAISettings } from "../hooks/useAISettings";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useEmailStore } from "../stores/emailStore";
 import { useScanStore } from "../stores/scanStore";
+import { useEmailStatusPoller } from "../hooks/useEmailStatusPoller";
 
 
 function RatingStars({ rating }) {
@@ -69,7 +70,14 @@ export default function DiscoverPage() {
   const setSearchProgress = (v) => ds.setField("searchProgress", v);
   const setSessions = (v) => ds.setField("sessions", v);
   const setActiveSession = (v) => ds.setField("activeSession", v);
-  const setRecords = (v) => ds.setField("records", typeof v === "function" ? v(records) : v);
+  // Use store's get() directly to avoid stale closure in functional updates
+  const setRecords = (v) => {
+    if (typeof v === "function") {
+      ds.setField("records", v(useDiscoverStore.getState().records));
+    } else {
+      ds.setField("records", v);
+    }
+  };
   const setLoading = (v) => ds.setField("loading", v);
   const setPage = (v) => ds.setField("page", typeof v === "function" ? v(page) : v);
   const setShowFilters = (v) => ds.setField("showFilters", typeof v === "function" ? v(showFilters) : v);
@@ -180,6 +188,22 @@ export default function DiscoverPage() {
 
   useEffect(() => { loadSessions(); }, []);
   useEffect(() => { if (activeSession !== undefined) loadRecords(activeSession); }, [activeSession, sortBy, sortDir, filterStatus, filterHasEmail, discoverSearch]);
+
+  // Poll email statuses on current page — updates rows when worker sends emails.
+  // Prospect records have `email` as a plain address string — we store the scan
+  // email block separately as `emailSent` to avoid clobbering the address field.
+  const pageWebsites = useMemo(
+    () => records.map(r => r.website).filter(Boolean),
+    [records]
+  );
+  const handleEmailStatusUpdate = useCallback((url, emailBlock) => {
+    setRecords(rs => rs.map(r =>
+      r.website === url
+        ? { ...r, emailSent: emailBlock, status: emailBlock?.sent_at ? "emailed" : r.status }
+        : r
+    ));
+  }, []);
+  useEmailStatusPoller(pageWebsites, handleEmailStatusUpdate);
 
   function handleSort(field) {
     if (sortBy === field) setSortDir(sortDir === "desc" ? "asc" : "desc");
@@ -740,7 +764,7 @@ export default function DiscoverPage() {
                 {/* Header */}
                 <div style={{
                   display: "grid",
-                  gridTemplateColumns: "32px 2fr 90px 80px 110px 160px 80px 76px",
+                  gridTemplateColumns: "32px 2fr 90px 80px 110px 160px 100px 120px",
                   padding: "8px 16px", borderBottom: "1px solid var(--border)",
                   background: "var(--bg3)", fontSize: 10, fontWeight: 700,
                   letterSpacing: "0.08em", textTransform: "uppercase",
@@ -771,7 +795,7 @@ export default function DiscoverPage() {
                         transition={{ delay: i * 0.01 }}
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "32px 2fr 90px 80px 110px 160px 80px 76px",
+                          gridTemplateColumns: "32px 2fr 90px 80px 110px 160px 100px 120px",
                           padding: "10px 16px", alignItems: "center",
                           borderBottom: i < paginated.length - 1 ? "1px solid var(--border)" : "none",
                           background: isSelected ? "var(--blue-glow)" : isScanning ? "rgba(59,130,246,0.06)" : "transparent",
@@ -838,8 +862,8 @@ export default function DiscoverPage() {
                             : <StatusBadge status={rec.status} />}
                         </div>
 
-                        {/* Actions — right-aligned, consistent padding */}
-                        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                        {/* Actions — right-aligned, no overflow */}
+                        <div style={{ display: "flex", gap: 3, justifyContent: "flex-end", flexWrap: "nowrap", minWidth: 0, overflow: "visible" }}>
                           {rec.website && ["new", "pending"].includes(rec.status) && (
                             <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}
                               className="btn btn--sm btn--primary"
@@ -853,26 +877,36 @@ export default function DiscoverPage() {
                             className={`btn btn--sm ${rec.status === "dont_contact" ? "btn--primary" : "btn--ghost"}`}
                             onClick={async (e) => {
                               e.stopPropagation();
-                              const next = rec.status === "dont_contact" ? "pending" : "dont_contact";
+                              // Toggle: if currently dont_contact, restore previous status;
+                              // otherwise save current status and mark dont_contact
+                              let next;
+                              if (rec.status === "dont_contact") {
+                                next = rec._prevStatus || "pending";
+                              } else {
+                                next = "dont_contact";
+                              }
                               await api.updateProspectStatus(rec.website, next);
-                              setRecords(recs => recs.map(r => r.website === rec.website ? { ...r, status: next } : r));
+                              setRecords(recs => recs.map(r => r.website === rec.website
+                                ? { ...r, status: next, _prevStatus: rec.status !== "dont_contact" ? rec.status : r._prevStatus }
+                                : r
+                              ));
                             }}
-                            title="Toggle Don't Contact">
+                            title={rec.status === "dont_contact" ? "Unmark Don't Contact" : "Mark Don't Contact"}>
                             <Ban size={12} />
                           </motion.button>
-                          {(rec.status === "emailed" || rec.email?.sent_at) && (
+                          {(rec.status === "emailed" || rec.emailSent?.sent_at) && (
                             <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.94 }}
                               className="btn btn--sm btn--ghost"
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 const res = await api.toggleResponse(rec.website);
-                                setRecords(recs => recs.map(r => r.website === rec.website ? { ...r, email: { ...r.email, got_response: res.got_response } } : r));
+                                setRecords(recs => recs.map(r => r.website === rec.website ? { ...r, emailSent: { ...r.emailSent, got_response: res.got_response } } : r));
                               }}
                               title="Toggle Response">
-                              <MessageSquare size={12} style={{ color: rec.email?.got_response ? "var(--green)" : "inherit" }} />
+                              <MessageSquare size={12} style={{ color: rec.emailSent?.got_response ? "var(--green)" : "inherit" }} />
                             </motion.button>
                           )}
-                          {rec.status === "scanned" && (
+                          {["scanned", "dont_contact", "emailed", "bounced"].includes(rec.status) && (
                             <motion.button whileHover={{ scale: 1.08 }}
                               className="btn btn--sm btn--ghost"
                               onClick={async () => {

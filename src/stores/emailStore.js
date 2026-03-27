@@ -87,3 +87,23 @@ export const useEmailStore = create((set, get) => ({
 
   resetAll: () => set({ emails: {}, drawerUrl: null }),
 }));
+
+// Standalone action — callable outside React (e.g. from polling hook)
+// Merges a fresh email block from the DB into the store without clobbering
+// an actively generating email or regressing a sent status.
+export function applyEmailStatusToStore(url, emailBlock) {
+  if (!emailBlock) return;
+  const store = useEmailStore.getState();
+  const existing = store.emails[url] || {};
+  if (["generating", "queued"].includes(existing.status)) return;
+  const sentAt = emailBlock.sent_at;
+  const scheduled = emailBlock.status === "scheduled";
+  const patch = {};
+  if (sentAt && existing.status !== "sent") patch.status = "sent";
+  else if (scheduled && !["sent", "generating", "ready"].includes(existing.status)) patch.status = "scheduled";
+  if (emailBlock.recipient && !existing.recipientEmail) patch.recipientEmail = emailBlock.recipient;
+  if (Object.keys(patch).length === 0) return;
+  useEmailStore.setState(s => ({
+    emails: { ...s.emails, [url]: { ...s.emails[url], ...patch } },
+  }));
+}

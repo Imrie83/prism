@@ -336,3 +336,175 @@ async def call_ai(
 
     result["_usage"] = usage
     return result
+
+
+# ── Anthropic Message Batches API ─────────────────────────────────────────────
+
+async def submit_claude_batch(
+    requests: list[dict],
+    api_key: str,
+    model: str,
+) -> str:
+    """Submit a batch of Claude requests. Returns batch_id.
+
+    Each item in `requests` must have:
+      - custom_id: str  (unique per request)
+      - system: str
+      - prompt: str
+      - images: list[str] | None
+    """
+    import base64 as _b64
+
+    batch_requests = []
+    for req in requests:
+        content: list = []
+        for img in req.get("images") or []:
+            clean_b64 = img
+            if "," in img[:50]:
+                clean_b64 = img.split(",", 1)[1]
+            try:
+                header = _b64.b64decode(clean_b64[:20])
+                media_type = "image/png" if header[:4] == b"\x89PNG" else "image/jpeg"
+            except Exception:
+                media_type = "image/jpeg"
+            content.append(
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": clean_b64},
+                }
+            )
+        content.append({"type": "text", "text": req["prompt"]})
+        batch_requests.append(
+            {
+                "custom_id": req["custom_id"],
+                "params": {
+                    "model": model,
+                    "max_tokens": 8192,
+                    "system": req["system"],
+                    "messages": [{"role": "user", "content": content}],
+                },
+            }
+        )
+
+    print(f"[claude-batch] ▶ submitting {len(batch_requests)} requests")
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(
+            "https://api.anthropic.com/v1/messages/batches",
+            headers={
+                "x-api-key": os.environ.get("ANTHROPIC_API_KEY", api_key),
+                "anthropic-version": "2023-06-01",
+                "anthropic-beta": "message-batches-2024-09-24",
+                "Content-Type": "application/json",
+            },
+            json={"requests": batch_requests},
+        )
+        r.raise_for_status()
+        batch_id = r.json()["id"]
+        print(f"[claude-batch] ✓ batch_id={batch_id}")
+        return batch_id
+
+
+async def poll_claude_batch(batch_id: str, api_key: str) -> dict[str, dict]:
+    """Poll until batch completes. Returns {custom_id: parsed_result_dict}.
+
+    Polls with exponential back-off (5s → 60s cap).
+    """
+    import asyncio
+
+    delay = 5
+    url = f"https://api.anthropic.com/v1/messages/batches/{batch_id}"
+    headers = {
+        "x-api-key": os.environ.get("ANTHROPIC_API_KEY", api_key),
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "message-batches-2024-09-24",
+    }
+    while True:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.get(url, headers=headers)
+            r.raise_for_status()
+            batch = r.json()
+        status = batch["processing_status"]
+        counts = batch.get("request_counts", {})
+        print(
+            f"[claude-batch] status={status} processing={counts.get('processing',0)} "
+            f"succeeded={counts.get('succeeded',0)} errored={counts.get('errored',0)}"
+        )
+        if status == "ended":
+            break
+        await asyncio.sleep(min(delay, 60))
+        delay = min(delay * 1.5, 60)
+
+    # Fetch results
+    results_url = batch.get("results_url")
+    if not results_url:
+        raise ValueError("[claude-batch] batch ended but no results_url")
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        r = await client.get(results_url, headers=headers)
+        r.raise_for_status()
+        raw = r.text
+
+    out: dict[str, dict] = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        custom_id = obj.get("custom_id", "")
+        result = obj.get("result", {})
+        if result.get("type") != "succeeded":
+            print(f"[claude-batch] ⚠ request {custom_id} not succeeded: {result.get('type')}")
+            out[custom_id] = {"error": result.get("type", "unknown")}
+            continue
+        message = result.get("message", {})
+        raw_text = message["content"][0]["text"]
+        u = message.get("usage", {})
+        usage = {
+            "prompt_tokens": u.get("input_tokens", 0),
+            "completion_tokens": u.get("output_tokens", 0),
+            "total_tokens": u.get("input_tokens", 0) + u.get("output_tokens", 0),
+            "provider": "claude",
+            "model": message.get("model", ""),
+        }
+        cleaned = _extract_json(raw_text)
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            repaired = _repair_json(cleaned)
+            parsed = json.loads(repaired)
+        parsed["_usage"] = usage
+        out[custom_id] = parsed
+
+    print(f"[claude-batch] ✓ fetched {len(out)} results")
+    return out
+
+
+async def call_ai_batch(
+    requests: list[dict],
+    settings: "AISettings",
+) -> dict[str, dict]:
+    """Run multiple AI requests as a batch (Claude only) or sequentially (others).
+
+    Each item in `requests`: {custom_id, system, prompt, images?}
+    Returns {custom_id: parsed_result_dict_with_usage}
+    """
+    if settings.ai_provider == "claude":
+        api_key = getattr(settings, "anthropic_api_key", "")
+        model = settings.anthropic_model
+        batch_id = await submit_claude_batch(requests, api_key, model)
+        return await poll_claude_batch(batch_id, api_key)
+    else:
+        # Fallback: run sequentially for Ollama / OpenAI
+        results: dict[str, dict] = {}
+        for req in requests:
+            try:
+                result = await call_ai(
+                    req["prompt"], req["system"], settings, req.get("images")
+                )
+                results[req["custom_id"]] = result
+            except Exception as e:
+                results[req["custom_id"]] = {"error": str(e)}
+        return results

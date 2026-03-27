@@ -4,7 +4,7 @@
  */
 const STATUS_META = {
   new: { label: "New", color: "var(--blue)", bg: "var(--blue-glow)" },
-  pending: { label: "Unscanned",color: "var(--ink3)", bg: "var(--surface)" },
+  pending: { label: "Unscanned", color: "var(--ink3)", bg: "var(--surface)" },
   queued: { label: "Queued", color: "#f59e0b", bg: "rgba(245,158,11,0.1)" },
   scanning: { label: "Scanning", color: "var(--blue)", bg: "var(--blue-glow)" },
   scanned: { label: "Scanned", color: "var(--green)", bg: "rgba(52,211,153,0.1)" },
@@ -13,6 +13,7 @@ const STATUS_META = {
   skipped: { label: "Skipped", color: "var(--ink3)", bg: "var(--surface)" },
   bounced: { label: "Bounced", color: "#ef4444", bg: "rgba(239,68,68,0.1)" },
   cant_deliver: { label: "Can't Deliver", color: "#dc2626", bg: "rgba(220,38,38,0.15)" },
+  dont_contact: { label: "Don't Contact", color: "#9ca3af", bg: "rgba(156,163,175,0.1)" },
 };
 
 export default function StatusBadge({ status }) {

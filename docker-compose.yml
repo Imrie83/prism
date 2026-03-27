@@ -1,5 +1,19 @@
 services:
 
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # Redirect mongod's own logs to /dev/null — all the JSON noise goes away.
+    # Meaningful DB activity is already logged by the Python layer ([db] lines).
+    # Genuine errors will still surface via docker compose ps / container exit codes.
+    command: mongod --logpath /dev/null
+    logging:
+      driver: "none"
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "127.0.0.1:27017:27017"
+
   frontend:
     build:
       context: .
@@ -20,11 +34,13 @@ services:
       - SCREENSHOT_SERVICE_URL=http://screenshot:3000
       - DISCOVER_SERVICE_URL=http://discover:3001
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - MONGO_URL=mongodb://mongo:27017
     volumes:
       - ./data:/app/data
     depends_on:
       - screenshot
       - discover
+      - mongo
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -39,12 +55,14 @@ services:
     environment:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - PYTHONUNBUFFERED=1
+      - MONGO_URL=mongodb://mongo:27017
     env_file:
       - .env
     volumes:
       - ./data:/app/data
     depends_on:
       - backend
+      - mongo
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -69,4 +87,5 @@ services:
     environment:
       - DISCOVER_DEBUG=0
 
-volumes: {}
+volumes:
+  mongo_data:

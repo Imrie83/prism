@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   RefreshCw, Trash2, Mail, MailCheck,
@@ -11,6 +11,7 @@ import PaginationFooter from "../components/PaginationFooter";
 import { useScanStore } from "../stores/scanStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useEmailStore } from "../stores/emailStore";
+import { useEmailStatusPoller } from "../hooks/useEmailStatusPoller";
 
 const PAGE_SIZE_OPTIONS = [15, 20, 30, 50, 100];
 
@@ -200,7 +201,19 @@ export default function HistoryPage() {
   }
 
   const totalPages = Math.ceil(total / perPage);
-  const COLS = "2fr 48px 90px 80px 130px 130px 80px 40px";
+  // Last column is "Actions" — needs 110px for delete + rescan + email buttons
+  const COLS = "2fr 48px 90px 80px 130px 130px 80px 110px";
+
+  // Collect URLs on current page for status polling
+  const pageUrls = useMemo(() => records.map(r => r.url), [records]);
+
+  // Poll email statuses every 5s — updates rows without full refresh
+  const handleEmailStatusUpdate = useCallback((url, emailBlock) => {
+    setRecords(recs => recs.map(r =>
+      r.url === url ? { ...r, email: emailBlock } : r
+    ));
+  }, []);
+  useEmailStatusPoller(pageUrls, handleEmailStatusUpdate);
 
   return (
     <div style={{ padding: "24px 32px", maxWidth: 1100, margin: "0 auto" }}>
@@ -340,7 +353,7 @@ export default function HistoryPage() {
             <SortHeader label="Scanned" field="scanned_at" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <SortHeader label="Email sent" field="email_sent" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <span style={{ color: "var(--ink3)" }}>Recipient</span>
-            <span style={{ color: "var(--ink3)", textAlign: "center" }}>Reply</span>
+            <span style={{ color: "var(--ink3)" }}>Actions</span>
           </div>
 
           {/* Rows */}
@@ -413,23 +426,23 @@ export default function HistoryPage() {
                 }}>
                   {rec.email?.recipient || "—"}
                 </div>
-                <div style={{ display: "flex", justifyContent: "center", gap: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "nowrap", justifyContent: "flex-end", minWidth: 0 }}>
                   <button
                     onClick={e => handleToggleResponse(rec.url, e)}
                     style={{
                       background: "none", border: "none", cursor: "pointer",
                       color: rec.email?.got_response ? "var(--green)" : "var(--ink3)",
-                      padding: 4, borderRadius: 4, display: "flex",
+                      padding: 3, borderRadius: 4, display: "flex", flexShrink: 0,
                     }}
                     title={rec.email?.got_response ? "Got response" : "No response yet"}>
-                    {rec.email?.got_response ? <CheckSquare size={15} /> : <Square size={15} />}
+                    {rec.email?.got_response ? <CheckSquare size={14} /> : <Square size={14} />}
                   </button>
                   <button
                     onClick={e => handleToggleContact(rec.url, e, rec.email?.status)}
                     style={{
                       background: "none", border: "none", cursor: "pointer",
                       color: rec.email?.status === "dont_contact" ? "#9ca3af" : "var(--ink3)",
-                      padding: 4, borderRadius: 4, display: "flex", opacity: rec.email?.status === "dont_contact" ? 1 : 0.6,
+                      padding: 3, borderRadius: 4, display: "flex", flexShrink: 0, opacity: rec.email?.status === "dont_contact" ? 1 : 0.6,
                     }}
                     title={rec.email?.status === "dont_contact" ? "Unmark Don't Contact" : "Mark Don't Contact"}>
                     <Ban size={13} />
@@ -439,7 +452,7 @@ export default function HistoryPage() {
                     disabled={deletingUrl === rec.url}
                     style={{
                       background: "none", border: "none", cursor: "pointer",
-                      color: "var(--ink3)", padding: 4, borderRadius: 4, display: "flex",
+                      color: "var(--ink3)", padding: 3, borderRadius: 4, display: "flex", flexShrink: 0,
                     }}
                     title="Delete record">
                     <Trash2 size={13} />

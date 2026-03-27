@@ -104,3 +104,20 @@ class DiscoverSearchRequest(BaseModel):
     keywords: str
     location: str = ""
     limit: int = 120
+
+
+class BatchAnalyzeRequest(BaseModel):
+    urls: list[str]
+    settings: AISettings
+    scan_mode: str = "batch"
+    vision_mode: bool = False
+
+
+class BatchEmailItem(BaseModel):
+    scan_result: dict[str, Any]
+    dashboard_screenshot: str | None = None
+
+
+class BatchGenerateEmailRequest(BaseModel):
+    items: list[BatchEmailItem]
+    settings: "EmailSettings"

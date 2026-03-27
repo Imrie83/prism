@@ -43,3 +43,11 @@ format-backend:
 ## Show running containers:
 ps:
 	docker compose ps
+
+## Lint + format JS/JSX (frontend) via eslint:
+lint-frontend:
+	npm run lint
+
+## Mongo shell:
+shell-mongo:
+	docker compose exec mongo mongosh prism

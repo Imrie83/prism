@@ -59,6 +59,10 @@ export const useSettingsStore = create(
       emailOpenaiModel: "gpt-4o",
       bounceCheckInterval: 10,
 
+      // Batch processing — use Anthropic Batch API for multi-URL scans/emails
+      // Default ON (50% cost saving, ~1hr latency). Toggle OFF for instant results.
+      useBatchProcessing: true,
+
       // Token cost — audit (Haiku by default)
       auditInputCostPer1M: HAIKU_INPUT_COST,
       auditOutputCostPer1M: HAIKU_OUTPUT_COST,

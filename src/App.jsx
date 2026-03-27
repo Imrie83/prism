@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Menu, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import Sidebar from "./components/Sidebar";
@@ -12,6 +12,7 @@ import DiscoverPage from "./pages/DiscoverPage";
 import { useScanStore } from "./stores/scanStore";
 import { useEmailStore } from "./stores/emailStore";
 import { useAgentStore } from "./stores/agentStore";
+import { useEmailStatusPoller } from "./hooks/useEmailStatusPoller";
 
 const VERSION = __APP_VERSION__;
 
@@ -46,6 +47,22 @@ export default function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const emailW = useRef(640);
+
+  // ── Global email status poller ────────────────────────────────────────────
+  // Collects all URLs from the scan store (shallow/deep/batch results) and polls
+  // for email status changes. applyEmailStatusToStore (called inside the hook)
+  // updates the emailStore so EmailDrawer + ResultsPage reflect live state.
+  // The History and Discover pages add their own onUpdate callbacks on top of this.
+  const store = useScanStore();
+  const globalPollUrls = useMemo(() => {
+    const urls = new Set();
+    store.shallowHistory.forEach(r => r.result?.url && urls.add(r.result.url));
+    store.deepHistory.forEach(r => r.pages?.forEach(p => p.result?.url && urls.add(p.result.url)));
+    store.batchHistory.forEach(r => r.results?.forEach(p => p.result?.url && urls.add(p.result.url)));
+    return [...urls];
+  }, [store.shallowHistory, store.deepHistory, store.batchHistory]);
+  // No onUpdate needed here — applyEmailStatusToStore inside the hook does the work
+  useEmailStatusPoller(globalPollUrls, null, 6000);
 
   useEffect(() => {
     const saved = localStorage.getItem("prism-theme");

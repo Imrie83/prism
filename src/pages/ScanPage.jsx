@@ -179,7 +179,7 @@ export default function ScanPage() {
     agentStore.clearHistory();
     abortRef.current = new AbortController();
 
-    // Silently filter out URLs already in history — no message, just skip
+    // Silently filter out URLs already in history
     let urls = rawUrls;
     try {
       const checks = await Promise.all(rawUrls.map(u => api.checkHistory(u).catch(() => ({ exists: false }))));
@@ -194,49 +194,117 @@ export default function ScanPage() {
     const runId = store.startBatch(urls);
     setLocalScanning(false);
 
-    // Email generation queue — drains independently so scanning isn't blocked waiting for AI
-    const emailQueue = [];
-    let emailWorkerRunning = false;
+    const scanSettings = getScanSettings();
+    const isClaude = scanSettings.ai_provider === "claude";
+    const useBatch = settings.useBatchProcessing && isClaude && urls.length > 1;
 
-    async function drainEmailQueue() {
-      if (emailWorkerRunning) return;
-      emailWorkerRunning = true;
-      while (emailQueue.length > 0) {
-        const { url, result } = emailQueue.shift();
-        if (!cancelledRef.current) handleScanResult(url, result);
-      }
-      emailWorkerRunning = false;
-    }
-
-    let consecutiveFails = 0;
-    for (const url of urls) {
-      if (cancelledRef.current || abortRef.current?.signal.aborted) break;
-      const taskId = makeTaskId("batch-page");
-      activeTaskIds.current.add(taskId);
+    if (useBatch) {
+      // ── Anthropic Batch API path (50% cost, ~1hr) ──────────────────────────
       try {
-        const result = await withRetry(
-          () => api.analyzePage(url, getScanSettings(), taskId, abortRef.current.signal, "batch"),
-          `batch ${url}`
+        console.log(`[batch] Using Anthropic Batch API for ${urls.length} URLs`);
+        const batchResult = await api.batchAnalyze(
+          urls, scanSettings, "batch", settings.visionMode,
+          abortRef.current.signal
         );
-        store.addBatchResult(runId, { url, result });
-        // Only queue email if scan returned real content (not an empty/failed load)
-        if (result?.issues?.length > 0 || result?.score != null) {
-          emailQueue.push({ url, result });
-          drainEmailQueue(); // fire-and-forget — next scan starts immediately
+        const results = batchResult?.results || {};
+
+        // Collect scans that need emails
+        const emailItems = [];
+        for (const url of urls) {
+          const result = results[url];
+          if (!result || result.error) {
+            store.addBatchResult(runId, { url, result: null, error: result?.error || "scan failed" });
+            continue;
+          }
+          store.addBatchResult(runId, { url, result });
+          if (result.issues?.length > 0 || result.score != null) {
+            emailItems.push({ url, result });
+          }
         }
-        consecutiveFails = 0;
+
+        // Batch-generate emails if needed
+        if (emailItems.length > 0 && !cancelledRef.current) {
+          const emailSettings = getEmailSettings();
+          const autoGenerate = settings.autoGenerateEmail;
+          if (autoGenerate) {
+            try {
+              console.log(`[batch] Batch-generating ${emailItems.length} emails`);
+              const emailBatchResult = await api.batchGenerateEmail(
+                emailItems.map(({ result }) => ({ scan_result: result })),
+                emailSettings,
+                abortRef.current.signal
+              );
+              const emailResults = emailBatchResult?.results || {};
+              for (const { url, result } of emailItems) {
+                const emailData = emailResults[url];
+                if (emailData && !emailData.error) {
+                  handleScanResult(url, result, emailData);
+                } else {
+                  handleScanResult(url, result);
+                }
+              }
+            } catch (emailErr) {
+              console.warn("[batch] Batch email generation failed, falling back to sequential:", emailErr);
+              for (const { url, result } of emailItems) {
+                if (!cancelledRef.current) handleScanResult(url, result);
+              }
+            }
+          } else {
+            for (const { url, result } of emailItems) {
+              if (!cancelledRef.current) handleScanResult(url, result);
+            }
+          }
+        }
       } catch (e) {
-        if (e.message === "cancelled" || e.name === "AbortError") break;
-        consecutiveFails++;
-        store.addBatchResult(runId, { url, result: null, error: e.message });
-        if (consecutiveFails >= MAX_RETRIES) {
-          store.setScanError(`Stopped: ${MAX_RETRIES} consecutive failures. Check services.`);
-          break;
+        if (e.message !== "cancelled" && e.name !== "AbortError") {
+          store.setScanError(`Batch scan failed: ${e.message}`);
         }
-      } finally {
-        activeTaskIds.current.delete(taskId);
+      }
+    } else {
+      // ── Sequential path (instant results, Ollama/OpenAI or toggle off) ────
+      const emailQueue = [];
+      let emailWorkerRunning = false;
+
+      async function drainEmailQueue() {
+        if (emailWorkerRunning) return;
+        emailWorkerRunning = true;
+        while (emailQueue.length > 0) {
+          const { url, result } = emailQueue.shift();
+          if (!cancelledRef.current) handleScanResult(url, result);
+        }
+        emailWorkerRunning = false;
+      }
+
+      let consecutiveFails = 0;
+      for (const url of urls) {
+        if (cancelledRef.current || abortRef.current?.signal.aborted) break;
+        const taskId = makeTaskId("batch-page");
+        activeTaskIds.current.add(taskId);
+        try {
+          const result = await withRetry(
+            () => api.analyzePage(url, scanSettings, taskId, abortRef.current.signal, "batch"),
+            `batch ${url}`
+          );
+          store.addBatchResult(runId, { url, result });
+          if (result?.issues?.length > 0 || result?.score != null) {
+            emailQueue.push({ url, result });
+            drainEmailQueue();
+          }
+          consecutiveFails = 0;
+        } catch (e) {
+          if (e.message === "cancelled" || e.name === "AbortError") break;
+          consecutiveFails++;
+          store.addBatchResult(runId, { url, result: null, error: e.message });
+          if (consecutiveFails >= MAX_RETRIES) {
+            store.setScanError(`Stopped: ${MAX_RETRIES} consecutive failures. Check services.`);
+            break;
+          }
+        } finally {
+          activeTaskIds.current.delete(taskId);
+        }
       }
     }
+
     store.finishBatch(runId);
   }
 
@@ -433,8 +501,38 @@ export default function ScanPage() {
                 placeholder={"https://company-a.co.jp\nhttps://company-b.co.jp\nhttps://company-c.co.jp"}
                 rows={8} disabled={isScanning}
                 style={{ width: "100%", fontFamily: "var(--font-mono)", fontSize: 12, resize: "vertical" }} />
-              {/* Auto-generate email toggle */}
+
+              {/* Batch processing mode toggle */}
               <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: "var(--ink2)", fontWeight: 500 }}>
+                    Use Anthropic Batch API
+                  </span>
+                  <span style={{ fontSize: 10, color: "var(--ink3)" }}>
+                    {settings.useBatchProcessing
+                      ? "— 50% cheaper · results in ~1 hr (Claude only)"
+                      : "— instant results · full price per request"}
+                  </span>
+                </div>
+                <button
+                  onClick={() => settings.setField("useBatchProcessing", !settings.useBatchProcessing)}
+                  disabled={isScanning}
+                  title={settings.useBatchProcessing ? "Switch to instant mode" : "Switch to batch mode (cheaper)"}
+                  style={{
+                    width: 36, height: 20, borderRadius: 10, border: "none", cursor: isScanning ? "not-allowed" : "pointer",
+                    background: settings.useBatchProcessing ? "var(--blue)" : "var(--border)",
+                    position: "relative", transition: "background 0.2s", flexShrink: 0,
+                  }}>
+                  <span style={{
+                    position: "absolute", top: 2, left: settings.useBatchProcessing ? 18 : 2,
+                    width: 16, height: 16, borderRadius: "50%", background: "white",
+                    transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }} />
+                </button>
+              </div>
+
+              {/* Auto-generate email toggle */}
+              <div style={{ marginTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <Mail size={13} color="var(--ink3)" />
                   <span style={{ fontSize: 12, color: "var(--ink2)", fontWeight: 500 }}>Auto-generate email after each scan</span>
@@ -454,11 +552,12 @@ export default function ScanPage() {
                   }} />
                 </button>
               </div>
+
               <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12, gap: 8 }}>
                 {isScanning
                   ? <button className="btn btn--danger" onClick={cancelAll}><Square size={14} /> Stop Batch</button>
                   : <button className="btn btn--primary btn--lg" onClick={runBatch} disabled={!batchText.trim() || isScanning}>
-                      <Play size={14} /> Start Batch
+                      <Play size={14} /> {settings.useBatchProcessing && getScanSettings().ai_provider === "claude" && batchText.trim().split("\n").filter(Boolean).length > 1 ? "Submit Batch" : "Start Batch"}
                     </button>}
               </div>
             </div>

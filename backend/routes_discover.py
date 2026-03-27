@@ -11,7 +11,17 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from .db import scans_db, prospects_db, ProspectRecord
+from .db import (
+    prospects_col,
+    scans_col,
+    list_prospects,
+    get_prospect,
+    upsert_prospect,
+    update_prospect_status,
+    update_prospect_email,
+    delete_prospects,
+    toggle_prospect_response,
+)
 from .models import DiscoverSearchRequest
 
 router = APIRouter()
@@ -21,7 +31,10 @@ router = APIRouter()
 async def discover_search(req: DiscoverSearchRequest):
     """Scrape Google Maps — streams NDJSON progress events, final line is the result."""
     session_id = str(uuid.uuid4())[:8]
-    scanned_urls = {r.get("url", "") for r in scans_db.all()}
+    # Collect already-scanned URLs
+    cursor = scans_col().find({}, {"_id": 0, "url": 1})
+    scanned_docs = await cursor.to_list(length=None)
+    scanned_urls = {d["url"] for d in scanned_docs if d.get("url")}
     print(
         f"[discover] session={session_id} keywords={req.keywords!r} location={req.location!r} limit={req.limit}"
     )
@@ -58,12 +71,13 @@ async def discover_search(req: DiscoverSearchRequest):
                             continue
 
                         if event.get("type") == "done":
-                            # Demote existing "new" records from other sessions to "pending"
-                            # so only the current session's results show as "New"
-                            prospects_db.update(
-                                {"status": "pending"},
-                                (ProspectRecord.status == "new")
-                                & (ProspectRecord.session_id != session_id),
+                            # Demote "new" records from other sessions to "pending"
+                            await prospects_col().update_many(
+                                {
+                                    "status": "new",
+                                    "session_id": {"$ne": session_id},
+                                },
+                                {"$set": {"status": "pending"}},
                             )
                             for biz in event.get("businesses", []):
                                 website = (biz.get("website") or "").strip()
@@ -83,17 +97,12 @@ async def discover_search(req: DiscoverSearchRequest):
                                 biz["discovered_at"] = time.strftime(
                                     "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
                                 )
-                                existing = prospects_db.get(
-                                    ProspectRecord.website == website
-                                )
+                                existing = await get_prospect(website)
                                 if not existing:
-                                    prospects_db.insert(biz)
-                                elif existing.get("status") not in (
-                                    "scanned",
-                                    "emailed",
-                                ):
-                                    prospects_db.update(
-                                        biz, ProspectRecord.website == website
+                                    await prospects_col().insert_one(biz)
+                                elif existing.get("status") not in ("scanned", "emailed"):
+                                    await prospects_col().update_one(
+                                        {"website": website}, {"$set": biz}
                                     )
                                 saved.append(biz)
 
@@ -121,51 +130,33 @@ async def discover_search(req: DiscoverSearchRequest):
 
 @router.get("/api/discover/prospects")
 async def get_prospects(
-    session_id: str | None = None,
+    page: int = 1,
+    per_page: int = 25,
     sort_by: str = "discovered_at",
     sort_dir: str = "desc",
     filter_status: str = "all",
     filter_has_email: str = "all",
     search: str = "",
 ):
-    """Return saved prospects, optionally filtered by session or search."""
-    records = prospects_db.all()
-
-    if search:
-        s_lower = search.lower()
-        records = [
-            r for r in records
-            if s_lower in (r.get("name") or "").lower() 
-            or s_lower in (r.get("website") or "").lower()
-            or s_lower in str(r.get("rating") or "")
-        ]
-
-    if session_id:
-        records = [r for r in records if r.get("session_id") == session_id]
-    if filter_status != "all":
-        records = [r for r in records if r.get("status") == filter_status]
-    if filter_has_email == "yes":
-        records = [r for r in records if r.get("email")]
-    elif filter_has_email == "no":
-        records = [r for r in records if not r.get("email")]
-
-    reverse = sort_dir == "desc"
-    if sort_by == "rating":
-        records.sort(key=lambda r: float(r.get("rating") or 0), reverse=reverse)
-    elif sort_by == "name":
-        records.sort(key=lambda r: r.get("name", ""), reverse=reverse)
-    elif sort_by == "status":
-        records.sort(key=lambda r: r.get("status", ""), reverse=reverse)
-    else:
-        records.sort(key=lambda r: r.get("discovered_at", ""), reverse=reverse)
-
-    return {"records": records, "total": len(records)}
+    """Return saved prospects, paginated and filterable."""
+    mongo_dir = -1 if sort_dir == "desc" else 1
+    records, total = await list_prospects(
+        page=page,
+        per_page=per_page,
+        sort_by=sort_by,
+        sort_dir=mongo_dir,
+        filter_status=filter_status,
+        filter_has_email=filter_has_email,
+        search=search,
+    )
+    return {"records": records, "total": total}
 
 
 @router.get("/api/discover/sessions")
 async def get_sessions():
     """Return distinct discover sessions with metadata."""
-    records = prospects_db.all()
+    cursor = prospects_col().find({}, {"_id": 0})
+    records = await cursor.to_list(length=None)
     sessions: dict = {}
     for r in records:
         sid = r.get("session_id")
@@ -191,35 +182,49 @@ async def get_sessions():
 
 
 @router.get("/api/discover/prospect")
-async def get_prospect(website: str):
+async def get_prospect_route(website: str):
     """Look up a single prospect by website URL."""
-    record = prospects_db.get(ProspectRecord.website == website)
-    if not record:
-        return {"record": None}
+    record = await get_prospect(website)
     return {"record": record}
 
 
 @router.patch("/api/discover/status")
-async def update_prospect_status(body: dict):
+async def update_status(body: dict):
     website = body.get("website")
     status = body.get("status")
     if not website or not status:
         raise HTTPException(400, "website and status required")
-    prospects_db.update({"status": status}, ProspectRecord.website == website)
+    await update_prospect_status(website, status)
     return {"ok": True}
 
 
 @router.delete("/api/discover/prospect")
 async def delete_prospect(website: str):
-    prospects_db.remove(ProspectRecord.website == website)
+    await delete_prospects([website])
     return {"ok": True}
 
 
+@router.delete("/api/discover/prospects/bulk")
+async def delete_prospects_bulk(body: dict):
+    websites = body.get("websites", [])
+    count = await delete_prospects(websites)
+    return {"ok": True, "deleted": count}
+
+
 @router.patch("/api/discover/email")
-async def update_prospect_email(body: dict):
+async def update_email(body: dict):
     website = body.get("website")
     email = body.get("email")
     if not website:
         raise HTTPException(400, "website required")
-    prospects_db.update({"email": email}, ProspectRecord.website == website)
+    await update_prospect_email(website, email)
     return {"ok": True}
+
+
+@router.patch("/api/discover/response")
+async def toggle_response(body: dict):
+    website = body.get("website")
+    if not website:
+        raise HTTPException(400, "website required")
+    new_val = await toggle_prospect_response(website)
+    return {"got_response": new_val}

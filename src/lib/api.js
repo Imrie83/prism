@@ -55,16 +55,12 @@ async function postStreamLast(path, body, signal) {
 }
 
 export const api = {
-  // taskId is a unique string — backend registers it for cancellation
   async analyzePage(url, settings, taskId, signal, scanMode = "shallow", visionMode = false) {
     return postStreamLast("/analyze", { url, settings, task_id: taskId, scan_mode: scanMode, vision_mode: visionMode }, signal);
   },
 
-  // Tell the backend to cancel a running task immediately
   async cancelTask(taskId) {
-    try {
-      await fetch(`${BASE}/cancel/${taskId}`, { method: "POST" });
-    } catch {}
+    try { await fetch(`${BASE}/cancel/${taskId}`, { method: "POST" }); } catch {}
   },
 
   async crawl(url, maxPages, signal) {
@@ -79,6 +75,15 @@ export const api = {
     }, signal);
   },
 
+  /** Batch-generate emails for multiple scan results. Returns {results: {url: emailData}} */
+  async batchGenerateEmail(items, settings, signal) {
+    return postStreamLast("/batch-generate-email", { items, settings }, signal);
+  },
+
+  /** Batch-scan multiple URLs. Returns {results: {url: scanData}} */
+  async batchAnalyze(urls, settings, scanMode = "batch", visionMode = false, signal) {
+    return postStreamLast("/batch-analyze", { urls, settings, scan_mode: scanMode, vision_mode: visionMode }, signal);
+  },
 
   async agentChat(messages, scanContext, settings, signal) {
     return post("/agent-chat", { messages, scan_context: scanContext, settings }, signal);
@@ -164,6 +169,13 @@ export const api = {
     return post("/rebuild-card", { scan_result: scanResult, selected_issue_indices: selectedIndices });
   },
 
+  /** Poll email statuses for a list of URLs. Returns {url: emailBlock|null} */
+  async getEmailStatuses(urls) {
+    if (!urls.length) return {};
+    const res = await fetch(`${BASE}/email-status?urls=${encodeURIComponent(urls.join(","))}`);
+    return res.json();
+  },
+
   // ── Discover ──────────────────────────────────────────────────────────────
   async discoverSearch(keywords, location, limit, onProgress) {
     return new Promise((resolve, reject) => {
@@ -176,35 +188,46 @@ export const api = {
         .catch(reject);
     });
   },
+
   async getProspect(website) {
     const res = await fetch(`${BASE}/discover/prospect?website=${encodeURIComponent(website)}`);
     return res.json();
   },
 
-  async getProspects(sessionId, sortBy = "discovered_at", sortDir = "desc", filterStatus = "all", filterHasEmail = "all", search = "") {
-    const params = new URLSearchParams({ sort_by: sortBy, sort_dir: sortDir, filter_status: filterStatus, filter_has_email: filterHasEmail });
+  async getProspects(sessionId, sortBy = "discovered_at", sortDir = "desc", filterStatus = "all", filterHasEmail = "all", search = "", page = 1, perPage = 25) {
+    const params = new URLSearchParams({ sort_by: sortBy, sort_dir: sortDir, filter_status: filterStatus, filter_has_email: filterHasEmail, page, per_page: perPage });
     if (sessionId) params.set("session_id", sessionId);
     if (search) params.set("search", search);
     const res = await fetch(`${BASE}/discover/prospects?${params}`);
     return res.json();
   },
+
   async getSessions() {
     const res = await fetch(`${BASE}/discover/sessions`);
     return res.json();
   },
+
   async updateProspectStatus(website, status) {
     return fetch(`${BASE}/discover/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ website, status }) }).then(r => r.json());
   },
+
   async deleteProspect(website) {
     return fetch(`${BASE}/discover/prospect?website=${encodeURIComponent(website)}`, { method: "DELETE" }).then(r => r.json());
   },
+
+  async deleteProspectsBulk(websites) {
+    return fetch(`${BASE}/discover/prospects/bulk`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ websites }) }).then(r => r.json());
+  },
+
   async updateProspectEmail(website, email) {
     return fetch(`${BASE}/discover/email`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ website, email }) }).then(r => r.json());
   },
+
   async getGlobalSettings() {
     const res = await fetch(`${BASE}/settings`);
     return res.json();
   },
+
   async updateGlobalSettings(settings) {
     return post("/settings", settings);
   },
