@@ -46,7 +46,7 @@ from .routes_history import router as history_router
 from .routes_discover import router as discover_router
 from .utils import extract_emails_from_html
 
-app = FastAPI(title="Prism Audit API", version="4.2.0")
+app = FastAPI(title="Prism Audit API", version="4.3.0")
 
 
 @app.on_event("startup")

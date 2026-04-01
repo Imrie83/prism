@@ -278,7 +278,12 @@ Return JSON only — no markdown, no explanation:
 {{
   "subject": "<Japanese subject line — specific to this business, makes them want to open it>",
   "jp_paragraphs": ["<paragraph 1>", "<paragraph 2>", "<paragraph 3>", "<paragraph 4 if needed>"],
-  "en_paragraphs": ["<paragraph 1>", "<paragraph 2>", "<paragraph 3>", "<paragraph 4 if needed>"]
+  "en_paragraphs": ["<paragraph 1>", "<paragraph 2>", "<paragraph 3>", "<paragraph 4 if needed>"],
+  "report_card_summary_jp": [
+    "<paragraph 1: what the current experience is for an international visitor — expand on what was said in the email body>",
+    "<paragraph 2: the main opportunities — what could change and what it would mean for the business>",
+    "<paragraph 3: what Shinrai Web specifically offers for this situation — 1-3 concrete services, written as an invitation not a sales pitch>"
+  ]
 }}"""
 
 
@@ -370,5 +375,10 @@ Return JSON only — no markdown, no explanation:
 {{
   "subject": "<Japanese subject line — specific to this business, not generic>",
   "jp_paragraphs": ["<paragraph 1>", "<paragraph 2>", "<paragraph 3>", "<paragraph 4 if needed>"],
-  "en_paragraphs": ["<paragraph 1>", "<paragraph 2>", "<paragraph 3>", "<paragraph 4 if needed>"]
+  "en_paragraphs": ["<paragraph 1>", "<paragraph 2>", "<paragraph 3>", "<paragraph 4 if needed>"],
+  "report_card_summary_jp": [
+    "<paragraph 1: what the current experience is for an international visitor — expand on the email, be specific to this site>",
+    "<paragraph 2: the main opportunities — what could realistically change and what it would mean for the business>",
+    "<paragraph 3: what Shinrai Web specifically offers — 1-3 concrete services most relevant to this situation, written as an invitation>"
+  ]
 }}"""

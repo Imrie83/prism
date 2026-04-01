@@ -109,8 +109,12 @@ UX_TYPES = {
 }
 
 
-def build_report_card_html(scan: dict) -> str:
-    """Build light-theme HTML report card for email embedding."""
+def build_report_card_html(scan: dict, report_summary: list[str] | None = None) -> str:
+    """Build premium HTML report card for email embedding.
+
+    If report_summary (list of JP paragraphs) is provided, renders the narrative
+    summary version instead of the issue table. Falls back to issue table if None.
+    """
     score = scan.get("score", 0)
     summary = scan.get("summary", "")
     url = scan.get("url", "")
@@ -118,8 +122,90 @@ def build_report_card_html(scan: dict) -> str:
     total = scan.get("totalIssues", len(issues))
 
     score_color = "#16a34a" if score >= 75 else "#d97706" if score >= 45 else "#dc2626"
+    score_bg = "#f0fdf4" if score >= 75 else "#fffbeb" if score >= 45 else "#fef2f2"
+    jp_score_label = "良好" if score >= 75 else "要改善" if score >= 45 else "要対応"
+    domain = url.replace("https://", "").replace("http://", "").split("/")[0]
 
-    # Pick up to 5 issues with category variety
+    pct = max(0, min(100, score))
+    # Score ring
+    ring_html = f"""
+      <div style="position:relative;width:88px;height:88px;flex-shrink:0;">
+        <div style="width:88px;height:88px;border-radius:50%;
+                    background:conic-gradient({score_color} {pct}%, #e5e7eb {pct}% 100%);
+                    display:flex;align-items:center;justify-content:center;">
+          <div style="width:64px;height:64px;border-radius:50%;background:#ffffff;
+                      display:flex;flex-direction:column;align-items:center;justify-content:center;
+                      box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+            <span style="font-size:22px;font-weight:800;color:{score_color};line-height:1;">{score}</span>
+            <span style="font-size:9px;color:#9ca3af;font-weight:500;">/100</span>
+          </div>
+        </div>
+      </div>"""
+
+    counts = scan.get("issueCounts", {})
+    counts_html = ""
+    for sev, col in [("high", "#dc2626"), ("medium", "#d97706"), ("low", "#16a34a")]:
+        n = counts.get(sev, 0)
+        if n:
+            counts_html += f'<span style="font-size:11px;font-weight:700;color:{col};margin-right:12px;">▲ {n} {JP_SEV.get(sev, sev)}</span>'
+
+    # ── Narrative summary version (new) ──────────────────────────────────────
+    if report_summary:
+        summary_html = "".join(
+            f'<p style="font-size:12px;color:#374151;line-height:1.8;margin:0 0 14px;'
+            f'padding-left:14px;border-left:3px solid {score_color}18;">{p}</p>'
+            for p in report_summary if p
+        )
+
+        return f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic',sans-serif;
+                               background:#ffffff;border:1.5px solid #e5e7eb;border-radius:12px;
+                               overflow:hidden;max-width:520px;margin:0 auto;
+                               box-shadow:0 4px 20px rgba(46,63,163,0.08);">
+  <!-- Header bar -->
+  <div style="background:linear-gradient(135deg,#1e2d7d 0%,#2e3fa3 60%,#4f63c4 100%);
+              padding:14px 20px;display:flex;align-items:center;gap:10px;">
+    <div style="width:6px;height:6px;border-radius:50%;background:#a5b4fc;"></div>
+    <span style="color:#ffffff;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Shinrai Audit Report</span>
+    <span style="color:#a5b4fc;font-size:11px;margin-left:auto;font-family:monospace;opacity:0.9;">{domain}</span>
+  </div>
+  <!-- Score row -->
+  <div style="padding:20px 24px;display:flex;align-items:center;gap:20px;
+              background:linear-gradient(to right,{score_bg},{score_bg}60,#ffffff);
+              border-bottom:1.5px solid #e5e7eb;">
+    {ring_html}
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:10px;color:#6b7280;font-weight:700;letter-spacing:0.08em;
+                  text-transform:uppercase;margin-bottom:6px;">英語対応スコア</div>
+      <div style="font-size:18px;font-weight:800;color:{score_color};margin-bottom:6px;
+                  letter-spacing:-0.02em;">{jp_score_label}</div>
+      <div style="margin-bottom:4px;">{counts_html}</div>
+      <div style="font-size:10px;color:#9ca3af;">合計 {total} 件の改善点を検出</div>
+    </div>
+  </div>
+  <!-- Divider with label -->
+  <div style="display:flex;align-items:center;gap:0;background:#f8faff;">
+    <div style="height:2px;flex:1;background:linear-gradient(to right,#2e3fa320,transparent);"></div>
+    <div style="padding:8px 16px;font-size:10px;font-weight:700;color:#2e3fa3;
+                letter-spacing:0.08em;text-transform:uppercase;white-space:nowrap;">
+      ✦ 現状と改善の機会
+    </div>
+    <div style="height:2px;flex:1;background:linear-gradient(to left,#2e3fa320,transparent);"></div>
+  </div>
+  <!-- Narrative body -->
+  <div style="padding:20px 24px 16px;">
+    {summary_html}
+  </div>
+  <!-- Footer -->
+  <div style="background:#f8faff;padding:12px 20px;border-top:1.5px solid #e5e7eb;
+              display:flex;align-items:center;gap:8px;">
+    <div style="width:4px;height:4px;border-radius:50%;background:#2e3fa3;opacity:0.4;"></div>
+    <span style="font-size:10px;color:#9ca3af;letter-spacing:0.03em;">
+      Shinrai Prism Audit · 信頼ウェブ · 詳細レポートはお問い合わせください
+    </span>
+  </div>
+</div>"""
+
+    # ── Issue table fallback (original, kept for deep scans / non-experimental) ─
     picked: list = []
     for category in (TEXT_TYPES, VISUAL_TYPES, UX_TYPES):
         for sev in ("high", "medium", "low"):
@@ -160,31 +246,6 @@ def build_report_card_html(scan: dict) -> str:
           <p style="font-size:11px;color:#6b7280;margin:0;line-height:1.6;">{expl}</p>
         </div>"""
 
-    pct = max(0, min(100, score))
-    ring_html = f"""
-      <div style="position:relative;width:80px;height:80px;flex-shrink:0;">
-        <div style="width:80px;height:80px;border-radius:50%;
-                    background:conic-gradient({score_color} {pct}%, #e5e7eb {pct}% 100%);
-                    display:flex;align-items:center;justify-content:center;">
-          <div style="width:58px;height:58px;border-radius:50%;background:#f9fafb;
-                      display:flex;flex-direction:column;align-items:center;justify-content:center;">
-            <span style="font-size:20px;font-weight:800;color:{score_color};line-height:1;">{score}</span>
-            <span style="font-size:9px;color:#9ca3af;">/100</span>
-          </div>
-        </div>
-      </div>"""
-
-    counts = scan.get("issueCounts", {})
-    counts_html = ""
-    for sev, col in [("high", "#dc2626"), ("medium", "#d97706"), ("low", "#16a34a")]:
-        n = counts.get(sev, 0)
-        if n:
-            counts_html += f'<span style="font-size:11px;font-weight:600;color:{col};margin-right:10px;">▲ {n} {JP_SEV.get(sev, sev)}</span>'
-
-    jp_score_label = "良好" if score >= 75 else "要改善" if score >= 45 else "要対応"
-    domain = url.replace("https://", "").replace("http://", "").split("/")[0]
-    total_label = f"合計 {total} 件の改善点を検出"
-
     return f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic',sans-serif;
                            background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;
                            overflow:hidden;max-width:520px;margin:0 auto;">
@@ -200,7 +261,7 @@ def build_report_card_html(scan: dict) -> str:
         英語対応スコア — {jp_score_label}
       </div>
       {counts_html}
-      <div style="font-size:10px;color:#9ca3af;margin-top:3px;">{total_label}</div>
+      <div style="font-size:10px;color:#9ca3af;margin-top:3px;">合計 {total} 件の改善点を検出</div>
       <p style="font-size:11px;color:#374151;line-height:1.6;margin:8px 0 0;">{summary}</p>
     </div>
   </div>
@@ -391,6 +452,7 @@ def build_email_html(ai_data: dict, report_card_html: str | None, sender: dict) 
     subject = ai_data.get("subject", "")
     jp_paras = ai_data.get("jp_paragraphs", [])
     en_paras = ai_data.get("en_paragraphs", [])
+    report_summary = ai_data.get("report_card_summary_jp") or None
 
     s = sender or {}
     name = s.get("name", "")
@@ -481,12 +543,16 @@ async def _do_generate_email(
     data = await call_ai(prompt, system, ai_settings)
     jp_paras = data.get("jp_paragraphs", [])
     en_paras = data.get("en_paragraphs", [])
+    report_summary = data.get("report_card_summary_jp") or None
+    # Rebuild card with AI-generated narrative summary if available
+    final_card_html = build_report_card_html(scan_for_card, report_summary=report_summary)
     print(
         f"[generate-email] ═══ DONE in {time.monotonic() - t0:.1f}s | "
         f"tokens={data.get('_usage', {}).get('total_tokens', '?')} | "
-        f"jp={len(jp_paras)} en={len(en_paras)} paras"
+        f"jp={len(jp_paras)} en={len(en_paras)} paras | "
+        f"card={'narrative' if report_summary else 'issue-table'}"
     )
-    return build_email_html(data, report_card_html, sender or {})
+    return build_email_html(data, final_card_html, sender or {})
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -730,7 +796,10 @@ async def _do_batch_generate_email(req: BatchGenerateEmailRequest) -> dict:
             results[url] = {"error": data["error"], "url": url}
             continue
         try:
-            results[url] = build_email_html(data, card_map.get(url), sender)
+            report_summary = data.get("report_card_summary_jp") or None
+            scan = next((item.scan_result for item in req.items if item.scan_result.get("url") == url), {})
+            final_card = build_report_card_html(scan, report_summary=report_summary)
+            results[url] = build_email_html(data, final_card, sender)
         except Exception as e:
             results[url] = {"error": str(e), "url": url}
 
