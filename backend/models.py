@@ -44,6 +44,7 @@ class EmailSettings(BaseModel):
     your_title: str = "English Localization Specialist"
     your_email: str = ""
     your_website: str = "https://imrie83.github.io/shinrai/"
+    email_prompt_variant: str = "standard"  # "standard" | "experimental"
 
 
 class GenerateEmailRequest(BaseModel):

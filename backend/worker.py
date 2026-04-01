@@ -3,9 +3,7 @@ Background worker for Prism.
 
 Two async loops:
   email_scheduler_loop  — sends emails that have reached their scheduled_at time
-  email_bounce_monitor_loop — checks IMAP inbox for bounce messages
-
-Both loops share the Motor (async MongoDB) db layer.
+  email_bounce_monitor_loop — checks IMAP inbox for bounce/delay messages
 """
 
 import asyncio
@@ -36,42 +34,76 @@ from .db import (
 
 
 def extract_bounced_address(msg):
-    """Parse a mailer-daemon bounce message and return the failed recipient."""
+    """Parse a mailer-daemon bounce/delay message.
+
+    Returns (recipient_address, action) where action is e.g. 'failed', 'delayed', or 'unknown'.
+    Returns (None, None) if no recipient could be extracted.
+
+    Handles:
+    - Standard delivery-status MIME parts (RFC 3464)
+    - ProtonMail Bridge format (message/delivery-status sub-messages)
+    - Plain-text bounces
+    """
     body = ""
+
     if msg.is_multipart():
         for part in msg.walk():
-            content_type = part.get_content_type()
-            if content_type == "message/delivery-status":
+            ct = part.get_content_type()
+            if ct == "message/delivery-status":
+                # Sub-parts are email.message.Message objects — must use as_string()
+                # NOT str(get_payload()) which returns '' for structured sub-messages
                 payload = part.get_payload()
                 if isinstance(payload, list):
                     for p in payload:
-                        body += str(p.get_payload())
+                        body += p.as_string()
                 else:
                     body += str(payload)
-            elif content_type == "text/plain":
-                body += str(part.get_payload(decode=True))
+            elif ct == "text/plain":
+                raw = part.get_payload(decode=True)
+                if raw:
+                    try:
+                        body += raw.decode("utf-8", errors="replace")
+                    except Exception:
+                        body += str(raw)
     else:
-        body = str(msg.get_payload(decode=True))
+        raw = msg.get_payload(decode=True)
+        if raw:
+            try:
+                body += raw.decode("utf-8", errors="replace")
+            except Exception:
+                body += str(raw)
+
+    if body:
+        pass  # body parsed successfully — no need to dump to console
+
+    # Extract the Action field (failed / delayed / etc.)
+    action_match = re.search(r"Action:\s*(\S+)", body, re.IGNORECASE)
+    action = action_match.group(1).lower() if action_match else "unknown"
 
     for pattern in [
-        r"Final-Recipient:\s*rfc822;\s*([^\s]+)",
-        r"Failed-Recipient:\s*([^\s]+)",
-        r"failed permanently:\s*([^\s]+)",
+        r"Final-Recipient:\s*rfc822;\s*([^\s<>]+)",
+        r"Original-Recipient:\s*rfc822;\s*([^\s<>]+)",
+        r"Failed-Recipient:\s*([^\s<>]+)",
+        r"failed permanently:\s*([^\s<>]+)",
     ]:
         m = re.search(pattern, body, re.IGNORECASE)
         if m:
-            return m.group(1).strip()
-    return None
+            addr = m.group(1).strip().strip("<>")
+            return addr, action
+
+    return None, None
 
 
 async def email_bounce_monitor_loop():
     print("[bounce_monitor] 🔍 Starting bounce monitor loop...", flush=True)
     while True:
+        interval = 10  # default; updated from DB settings below
         try:
             from .db import get_global_settings
 
             settings = await get_global_settings()
             interval = settings.get("bounce_check_interval", 10)
+            print(f"[bounce_monitor] ⏱ Next check in {interval}m (from DB settings)", flush=True)
 
             gmail_address = os.environ.get("GMAIL_ADDRESS")
             gmail_app_password = os.environ.get("GMAIL_APP_PASSWORD")
@@ -87,12 +119,10 @@ async def email_bounce_monitor_loop():
 
             imap_server = os.environ.get("EMAIL_IMAP_SERVER", "imap.gmail.com")
             imap_port = int(os.environ.get("EMAIL_IMAP_PORT", "993"))
-            bounce_sender = os.environ.get("EMAIL_BOUNCE_SENDER", "mailer-daemon")
-
-            print(
-                f"[bounce_monitor] 📬 Checking inbox {gmail_address} via {imap_server}:{imap_port}",
-                flush=True,
-            )
+            # ProtonMail uses MAILER-DAEMON@proton.me (uppercase) — default covers both
+            bounce_sender = os.environ.get("EMAIL_BOUNCE_SENDER", "MAILER-DAEMON")
+            # Folder to move processed bounces into (must exist in your mailbox)
+            bounce_folder = os.environ.get("EMAIL_BOUNCE_FOLDER", "Mail Delivery Fail")
 
             def check_imap():
                 bounced = []
@@ -108,56 +138,136 @@ async def email_bounce_monitor_loop():
 
                     mail.login(gmail_address, gmail_app_password)
                     mail.select("inbox")
+
+                    # Case-insensitive FROM search — covers mailer-daemon / MAILER-DAEMON
                     status, messages = mail.search(
                         None, f'(UNSEEN FROM "{bounce_sender}")'
                     )
-                    if status == "OK" and messages[0]:
-                        msg_nums = messages[0].split()
-                        print(
-                            f"[bounce_monitor] 📬 Found {len(msg_nums)} unread bounce message(s) — examining...",
-                            flush=True,
-                        )
-                        for num in msg_nums:
-                            # BODY.PEEK[] reads without setting the \Seen flag,
-                            # so we don't mark the message as read if we can't parse it
-                            res, data = mail.fetch(num, "(BODY.PEEK[])")
-                            if res == "OK":
-                                raw_email = data[0][1]
-                                msg = email.message_from_bytes(raw_email)
-                                failed_email = extract_bounced_address(msg)
-                                if failed_email:
-                                    bounced.append(failed_email)
+                    if not (status == "OK" and messages[0]):
+                        mail.logout()
+                        return bounced  # nothing to do, completely silent
+
+                    msg_nums = messages[0].split()
+                    print(
+                        f"[bounce_monitor] 📬 Found {len(msg_nums)} unread message(s) "
+                        f"from {bounce_sender!r} — examining...",
+                        flush=True,
+                    )
+
+                    # IMAP requires folder names with spaces to be double-quoted
+                    imap_folder = (
+                        f'"{bounce_folder}"' if " " in bounce_folder else bounce_folder
+                    )
+
+                    for num in msg_nums:
+                        # BODY.PEEK[] reads without setting \Seen — safe to retry
+                        res, data = mail.fetch(num, "(BODY.PEEK[])")
+                        if res != "OK":
+                            print(f"[bounce_monitor] ⚠ FETCH failed for msg {num}", flush=True)
+                            continue
+
+                        raw_email = data[0][1]
+                        msg = email.message_from_bytes(raw_email)
+                        subj = msg.get("Subject", "(no subject)")
+                        frm  = msg.get("From", "(unknown)")
+
+                        failed_email, action = extract_bounced_address(msg)
+
+                        if failed_email:
+                            bounced.append((failed_email, action))
+                            print(
+                                f"[bounce_monitor] 📨 Delivery issue detected: {failed_email}  "
+                                f"action={action}  (treating as bounce — scheduling fallback)",
+                                flush=True,
+                            )
+                            # Mark read first (always safe)
+                            mail.store(num, "+FLAGS", "\\Seen")
+                            # Try to move to bounce folder — folder name with spaces must be quoted
+                            try:
+                                # Use UID-based copy which is more widely supported
+                                uid_res, uid_data = mail.fetch(num, "(UID)")
+                                uid = None
+                                if uid_res == "OK" and uid_data and uid_data[0]:
+                                    uid_match = re.search(rb"UID (\d+)", uid_data[0])
+                                    uid = uid_match.group(1).decode() if uid_match else None
+
+                                moved = False
+                                if uid:
+                                    cp_res, _ = mail.uid("COPY", uid, imap_folder)
+                                    if cp_res == "OK":
+                                        mail.uid("STORE", uid, "+FLAGS", "\\Deleted")
+                                        mail.expunge()
+                                        moved = True
+
+                                if not moved:
+                                    # Fallback: plain COPY by sequence number
+                                    cp_res, _ = mail.copy(num, imap_folder)
+                                    if cp_res == "OK":
+                                        mail.store(num, "+FLAGS", "\\Deleted")
+                                        mail.expunge()
+                                        moved = True
+
+                                if moved:
                                     print(
-                                        f"[bounce_monitor] 📨 Bounce detected: {failed_email}",
+                                        f"[bounce_monitor] 📁 Moved to '{bounce_folder}'",
                                         flush=True,
                                     )
-                                    # Only mark as read once we've successfully parsed it
-                                    mail.store(num, "+FLAGS", "\\Seen")
                                 else:
-                                    # Log subject + snippet to help diagnose unrecognised formats
-                                    subj = msg.get("Subject", "(no subject)")
-                                    frm  = msg.get("From", "(unknown)")
                                     print(
-                                        f"[bounce_monitor] ⚠ Could not extract bounced address from message "
-                                        f"— From: {frm!r}  Subject: {subj!r}  "
-                                        f"(message left unread for manual review)",
+                                        f"[bounce_monitor] ⚠ Could not move to '{bounce_folder}' "
+                                        f"— message marked read in inbox",
                                         flush=True,
                                     )
-                    else:
-                        pass  # no new bounces — silent, no log spam
+                            except Exception as copy_err:
+                                print(
+                                    f"[bounce_monitor] ⚠ Move to '{bounce_folder}' failed "
+                                    f"({copy_err}) — message marked read in inbox",
+                                    flush=True,
+                                )
+                        else:
+                            print(
+                                f"[bounce_monitor] ⚠ Could not extract address from message "
+                                f"(left unread for manual review)",
+                                flush=True,
+                            )
+
                     mail.logout()
                 except Exception as e:
                     print(f"[bounce_monitor] ⚠ IMAP error: {e}", flush=True)
+                    traceback.print_exc()
                 return bounced
 
             bounced_emails = await asyncio.to_thread(check_imap)
 
-            for b_email in bounced_emails:
+            for b_email, action in bounced_emails:
                 b_email = b_email.lower().strip()
+                print(f"[bounce_monitor] 🔍 Looking up scan record for: {b_email!r}", flush=True)
+
+                # 1. Exact match on stored recipient (normal path — email sent via app)
                 record = await scans_col().find_one({"email.recipient": b_email})
+
+                # 2. Case-insensitive match on recipient
+                if not record:
+                    record = await scans_col().find_one({
+                        "email.recipient": {"$regex": f"^{re.escape(b_email)}$", "$options": "i"}
+                    })
+
+                # 3. Match against emails_found array (email sent outside app, or pre-migration data)
+                if not record:
+                    record = await scans_col().find_one({
+                        "emails_found": {"$regex": f"^{re.escape(b_email)}$", "$options": "i"}
+                    })
+                    if record:
+                        print(
+                            f"[bounce_monitor] ✓ Matched via emails_found array "
+                            f"(no sent email block — will still attempt fallback)",
+                            flush=True,
+                        )
+
                 if not record:
                     print(
-                        f"[bounce_monitor] No scan record found for bounced address {b_email}",
+                        f"[bounce_monitor] ⚠ No scan record found for {b_email!r} "
+                        f"(checked email.recipient and emails_found)",
                         flush=True,
                     )
                     continue
@@ -295,7 +405,6 @@ async def email_scheduler_loop():
                 await asyncio.to_thread(send_sync)
                 await update_email(url, to, subject, html)
 
-                # Preserve is_fallback flag after update_email overwrites the block
                 if email_data.get("is_fallback"):
                     await scans_col().update_one(
                         {"url": url}, {"$set": {"email.is_fallback": True}}
@@ -320,7 +429,6 @@ async def main():
     print(f"[worker] Gmail monitor: {gmail}", flush=True)
     print(f"[worker] MongoDB: {mongo}", flush=True)
 
-    # Ensure DB indexes before loops start
     try:
         await ensure_indexes()
     except Exception as e:

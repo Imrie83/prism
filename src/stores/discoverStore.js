@@ -26,6 +26,7 @@ export const useDiscoverStore = create((set, get) => ({
   // Results (current page of records from the backend)
   records: [],
   loading: false,
+  loadError: null,
 
   // Pagination
   page: 1,

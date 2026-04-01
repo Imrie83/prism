@@ -205,6 +205,19 @@ async def list_scans(
         query["email.status"] = "scheduled"
     elif filter_email == "none":
         query["email"] = {"$exists": False}
+    elif filter_email == "not_sent":
+        query["$or"] = [
+            {"email": {"$exists": False}},
+            {"email.sent_at": {"$exists": False}},
+        ]
+    elif filter_email == "got_response":
+        query["email.got_response"] = True
+    elif filter_email == "bounced":
+        query["email.status"] = "bounced"
+    elif filter_email == "cant_deliver":
+        query["email.status"] = "cant_deliver"
+    elif filter_email == "dont_contact":
+        query["email.status"] = "dont_contact"
     if filter_score_min > 0 or filter_score_max < 100:
         query["score"] = {"$gte": filter_score_min, "$lte": filter_score_max}
     if search:

@@ -344,19 +344,20 @@ async def submit_claude_batch(
     requests: list[dict],
     api_key: str,
     model: str,
-) -> str:
-    """Submit a batch of Claude requests. Returns batch_id.
+) -> tuple[str, dict[str, str]]:
+    """Submit a batch of Claude requests. Returns (batch_id, safe_to_original_map).
 
-    Each item in `requests` must have:
-      - custom_id: str  (unique per request)
-      - system: str
-      - prompt: str
-      - images: list[str] | None
+    The Anthropic Batch API requires custom_id to match ^[a-zA-Z0-9_-]{1,64}$.
+    URLs contain characters that fail this — so we generate safe internal IDs
+    (req_0001 …) and return a mapping back to the caller's original custom_ids.
     """
     import base64 as _b64
 
+    safe_to_original: dict[str, str] = {}
     batch_requests = []
-    for req in requests:
+    for idx, req in enumerate(requests):
+        safe_id = f"req_{idx:04d}"
+        safe_to_original[safe_id] = req["custom_id"]
         content: list = []
         for img in req.get("images") or []:
             clean_b64 = img
@@ -376,7 +377,7 @@ async def submit_claude_batch(
         content.append({"type": "text", "text": req["prompt"]})
         batch_requests.append(
             {
-                "custom_id": req["custom_id"],
+                "custom_id": safe_id,
                 "params": {
                     "model": model,
                     "max_tokens": 8192,
@@ -398,15 +399,18 @@ async def submit_claude_batch(
             },
             json={"requests": batch_requests},
         )
-        r.raise_for_status()
+        if not r.is_success:
+            print(f"[claude-batch] ✗ submission failed {r.status_code}: {r.text[:500]}")
+            r.raise_for_status()
         batch_id = r.json()["id"]
         print(f"[claude-batch] ✓ batch_id={batch_id}")
-        return batch_id
+        return batch_id, safe_to_original
 
+async def poll_claude_batch(batch_id: str, api_key: str, safe_to_original: dict[str, str] | None = None) -> dict[str, dict]:
+    """Poll until batch completes. Returns {original_custom_id: parsed_result_dict}.
 
-async def poll_claude_batch(batch_id: str, api_key: str) -> dict[str, dict]:
-    """Poll until batch completes. Returns {custom_id: parsed_result_dict}.
-
+    safe_to_original maps the internal safe IDs (req_0001 …) back to the
+    caller's original custom_ids (e.g. URLs). If None, uses the raw IDs.
     Polls with exponential back-off (5s → 60s cap).
     """
     import asyncio
@@ -453,11 +457,13 @@ async def poll_claude_batch(batch_id: str, api_key: str) -> dict[str, dict]:
             obj = json.loads(line)
         except Exception:
             continue
-        custom_id = obj.get("custom_id", "")
+        safe_id = obj.get("custom_id", "")
+        # Translate back to the original custom_id (e.g. URL)
+        original_id = (safe_to_original or {}).get(safe_id, safe_id)
         result = obj.get("result", {})
         if result.get("type") != "succeeded":
-            print(f"[claude-batch] ⚠ request {custom_id} not succeeded: {result.get('type')}")
-            out[custom_id] = {"error": result.get("type", "unknown")}
+            print(f"[claude-batch] ⚠ request {original_id} not succeeded: {result.get('type')}")
+            out[original_id] = {"error": result.get("type", "unknown")}
             continue
         message = result.get("message", {})
         raw_text = message["content"][0]["text"]
@@ -476,11 +482,10 @@ async def poll_claude_batch(batch_id: str, api_key: str) -> dict[str, dict]:
             repaired = _repair_json(cleaned)
             parsed = json.loads(repaired)
         parsed["_usage"] = usage
-        out[custom_id] = parsed
+        out[original_id] = parsed
 
     print(f"[claude-batch] ✓ fetched {len(out)} results")
     return out
-
 
 async def call_ai_batch(
     requests: list[dict],
@@ -494,8 +499,8 @@ async def call_ai_batch(
     if settings.ai_provider == "claude":
         api_key = getattr(settings, "anthropic_api_key", "")
         model = settings.anthropic_model
-        batch_id = await submit_claude_batch(requests, api_key, model)
-        return await poll_claude_batch(batch_id, api_key)
+        batch_id, safe_to_original = await submit_claude_batch(requests, api_key, model)
+        return await poll_claude_batch(batch_id, api_key, safe_to_original)
     else:
         # Fallback: run sequentially for Ollama / OpenAI
         results: dict[str, dict] = {}

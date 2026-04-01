@@ -59,6 +59,9 @@ export const useSettingsStore = create(
       emailOpenaiModel: "gpt-4o",
       bounceCheckInterval: 10,
 
+      // Email prompt variant: "standard" (current) or "experimental" (broader, service-focused)
+      emailPromptVariant: "standard",
+
       // Batch processing — use Anthropic Batch API for multi-URL scans/emails
       // Default ON (50% cost saving, ~1hr latency). Toggle OFF for instant results.
       useBatchProcessing: true,

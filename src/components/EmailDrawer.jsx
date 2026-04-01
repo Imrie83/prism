@@ -7,7 +7,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Wand2, Send, Copy, RefreshCw, Check, AlertCircle,
-  Clock, Zap, Mail, Eye, CalendarClock, XOctagon
+  Clock, Zap, Mail, Eye, CalendarClock, XOctagon, Layers, PlayCircle
 } from "lucide-react";
 import { useEmailStore } from "../stores/emailStore";
 import { useAISettings } from "../hooks/useAISettings";
@@ -99,6 +99,12 @@ export default function EmailDrawer() {
   const [activeTab, setActiveTab] = useState("edit"); // "edit" | "preview"
   const [justSent, setJustSent] = useState(false);
   const [scheduledAtStr, setScheduledAtStr] = useState("");
+  const [executingBatch, setExecutingBatch] = useState(false);
+
+  const emailBatchQueue = store.emailBatchQueue;
+  const isInBatch = drawerUrl ? store.isInEmailBatch(drawerUrl) : false;
+  const isClaude = settings.aiProvider === "claude";
+  const useBatch = settings.useBatchProcessing && isClaude;
 
   // Find the scan result for this URL across all history banks
   const scanResult = (() => {
@@ -202,6 +208,26 @@ export default function EmailDrawer() {
     store.generate(drawerUrl, scanResult, getEmailSettings());
   }
 
+  function getScanResultForUrl(url) {
+    for (const run of shallowHistory) {
+      if (run.result?.url === url) return run.result;
+    }
+    for (const run of batchHistory) {
+      const item = run.results?.find(r => r.url === url);
+      if (item?.result) return { ...item.result, url };
+    }
+    return null;
+  }
+
+  async function executeBatch() {
+    setExecutingBatch(true);
+    try {
+      await store.executeBatch(getScanResultForUrl, getEmailSettings());
+    } finally {
+      setExecutingBatch(false);
+    }
+  }
+
   async function send() {
     if (!drawerUrl) return;
     const to = emailData?.recipientEmail?.trim();
@@ -272,8 +298,9 @@ export default function EmailDrawer() {
   const wasAlreadySent = !!emailData?.sentAt; // set by emailStore after successful send
 
   return (
-    <AnimatePresence>
-      {isOpen && (
+    <>
+      <AnimatePresence>
+        {isOpen && (
         <motion.div
           className="email-drawer email-drawer--open"
           initial={{ x: "100%" }}
@@ -292,6 +319,7 @@ export default function EmailDrawer() {
               {drawerUrl && <span className="email-drawer__url">{drawerUrl}</span>}
             </div>
             <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+              {/* Generate now — always available */}
               <button className="btn btn--ghost btn--sm" onClick={generate} disabled={isBusy}>
                 {isBusy
                   ? <><div className="spinner" /> {emailData?.status === "queued" ? "Queued…" : "Generating…"}</>
@@ -299,6 +327,16 @@ export default function EmailDrawer() {
                     ? <><RefreshCw size={12} /> Regen</>
                     : <><Wand2 size={12} /> Generate</>}
               </button>
+              {/* Add to Batch — only when Claude + batch mode enabled */}
+              {useBatch && scanResult && (
+                <button
+                  className={`btn btn--sm ${isInBatch ? "btn--primary" : "btn--ghost"}`}
+                  onClick={() => isInBatch ? store.removeFromEmailBatch(drawerUrl) : store.addToEmailBatch(drawerUrl)}
+                  title={isInBatch ? "Remove from batch" : "Add to email batch (cheaper, ~1hr)"}
+                  disabled={isBusy}>
+                  <Layers size={12} /> {isInBatch ? "In Batch" : "Add to Batch"}
+                </button>
+              )}
               <button className="btn btn--ghost btn--icon btn--sm" onClick={closeDrawer}>
                 <X size={15} />
               </button>
@@ -415,7 +453,58 @@ export default function EmailDrawer() {
             </div>
           </div>
         </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+
+      {/* Floating batch counter — visible even when drawer is closed */}
+      <AnimatePresence>
+        {useBatch && emailBatchQueue.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            style={{
+              position: "fixed",
+              bottom: 24,
+              right: isOpen ? "calc(var(--email-w, 640px) + 16px)" : 24,
+              zIndex: 200,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              background: "var(--surface)",
+              border: "1px solid var(--blue-line)",
+              borderRadius: "var(--radius)",
+              padding: "10px 14px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+            }}
+          >
+            <Layers size={14} style={{ color: "var(--blue)", flexShrink: 0 }} />
+            <span style={{ fontSize: 12, color: "var(--ink2)", fontWeight: 600 }}>
+              {emailBatchQueue.length} email{emailBatchQueue.length !== 1 ? "s" : ""} in batch
+            </span>
+            <span style={{ fontSize: 11, color: "var(--ink3)" }}>· 50% cheaper · ~1hr</span>
+            <button
+              className="btn btn--sm btn--primary"
+              onClick={executeBatch}
+              disabled={executingBatch}
+              style={{ marginLeft: 4 }}
+            >
+              {executingBatch
+                ? <><div className="spinner" style={{ width: 11, height: 11, borderWidth: 2 }} /> Generating…</>
+                : <><PlayCircle size={12} /> Execute Batch</>}
+            </button>
+            <button
+              className="btn btn--sm btn--ghost"
+              onClick={() => store.clearEmailBatch()}
+              disabled={executingBatch}
+              title="Clear batch"
+              style={{ padding: "3px 7px" }}
+            >
+              <X size={12} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

@@ -53,10 +53,9 @@ export default function DiscoverPage() {
   const searchError = ds.searchError;
   const searchStats = ds.searchStats;
   const searchProgress = ds.searchProgress;
-  const sessions = ds.sessions;
-  const activeSession = ds.activeSession;
   const records = ds.records;
   const loading = ds.loading;
+  const loadError = ds.loadError;
   const page = ds.page;
   const showFilters = ds.showFilters;
   const showSuggestions = ds.showSuggestions;
@@ -68,8 +67,6 @@ export default function DiscoverPage() {
   const setSearchError = (v) => ds.setField("searchError", v);
   const setSearchStats = (v) => ds.setField("searchStats", v);
   const setSearchProgress = (v) => ds.setField("searchProgress", v);
-  const setSessions = (v) => ds.setField("sessions", v);
-  const setActiveSession = (v) => ds.setField("activeSession", v);
   // Use store's get() directly to avoid stale closure in functional updates
   const setRecords = (v) => {
     if (typeof v === "function") {
@@ -165,29 +162,25 @@ export default function DiscoverPage() {
 
 
 
-  const loadSessions = useCallback(async () => {
-    try {
-      const data = await api.getSessions();
-      setSessions(data.sessions || []);
-    } catch {}
-  }, []);
-
-  const loadRecords = useCallback(async (sessionId) => {
+  const loadRecords = useCallback(async () => {
     setLoading(true);
     ds.setField("selected", []);
     try {
-      const data = await api.getProspects(sessionId, sortBy, sortDir, filterStatus, filterHasEmail, discoverSearch);
+      const data = await api.getProspects(sortBy, sortDir, filterStatus, filterHasEmail, discoverSearch);
       setRecords(data.records || []);
+      ds.setField("loadError", null);
       setPage(1);
     } catch (e) {
       console.error("load prospects failed:", e);
+      ds.setField("loadError", "Could not load prospects — backend may be unavailable. Retrying...");
+      // Auto-retry after 5s so the page recovers when backend comes back up
+      setTimeout(() => loadRecords(), 5000);
     } finally {
       setLoading(false);
     }
   }, [sortBy, sortDir, filterStatus, filterHasEmail, discoverSearch]);
 
-  useEffect(() => { loadSessions(); }, []);
-  useEffect(() => { if (activeSession !== undefined) loadRecords(activeSession); }, [activeSession, sortBy, sortDir, filterStatus, filterHasEmail, discoverSearch]);
+  useEffect(() => { loadRecords(); }, [sortBy, sortDir, filterStatus, filterHasEmail, discoverSearch]);
 
   // Poll email statuses on current page — updates rows when worker sends emails.
   // Prospect records have `email` as a plain address string — we store the scan
@@ -232,8 +225,7 @@ export default function DiscoverPage() {
       });
 
       setSearchStats(result);
-      await loadSessions();
-      setActiveSession(result.session_id);
+      await loadRecords();
     } catch (e) {
       setSearchError(e.message || "Search failed");
     } finally {
@@ -283,17 +275,71 @@ export default function DiscoverPage() {
   }
 
   async function scanSelected() {
-    // Mark all selected new records as queued immediately so user sees the queue
     const toScan = records.filter(r => selected.has(r.website) && ["new", "pending"].includes(r.status) && r.website);
+    if (!toScan.length) return;
+
+    const scanSettings = getScanSettings();
+    const isClaude = scanSettings.ai_provider === "claude";
+    const useBatch = settings.useBatchProcessing && isClaude && toScan.length > 1;
+
+    // Mark all as queued immediately
     for (const r of toScan) {
       await api.updateProspectStatus(r.website, "queued");
       ds.updateRecord(r.website, { status: "queued" });
     }
     setSelected(new Set());
 
-    // Process sequentially — each item moves scanning → scanned as it's processed
-    for (const r of toScan) {
-      await scanProspect({ ...r, status: "queued" });
+    if (useBatch) {
+      // ── Anthropic Batch API path ───────────────────────────────────────────
+      // Keep status as "queued" — Anthropic processes async, no single "scanning" URL
+      // The backend handles screenshots + submission; we just wait for the result.
+      setScanningUrl("__batch__");
+
+      try {
+        const urls = toScan.map(r => r.website);
+        console.log(`[batch-scan] Submitting ${urls.length} URLs to Anthropic Batch API...`);
+        const batchResult = await api.batchAnalyze(urls, scanSettings, "batch", settings.visionMode, null);
+        const results = batchResult?.results || {};
+        console.log(`[batch-scan] Got ${Object.keys(results).length} results back`);
+
+        for (const r of toScan) {
+          const result = results[r.website];
+          if (!result || result.error) {
+            await api.updateProspectStatus(r.website, "new");
+            ds.updateRecord(r.website, { status: "new" });
+            continue;
+          }
+
+          const foundEmail = result.emails_found?.[0];
+          const emailToUse = r.email || foundEmail || (() => {
+            try { return `info@${new URL(r.website).hostname.replace(/^www\\./, "")}`; } catch { return null; }
+          })();
+
+          if (emailToUse && !r.email) await api.updateProspectEmail(r.website, emailToUse);
+
+          const runId = scanStore.startShallow(r.website);
+          scanStore.finishShallowSilent(runId, result);
+
+          if (emailToUse) emailStore.setRecipient(r.website, emailToUse);
+          if (settings.autoGenerateEmail) emailStore.generate(r.website, result, getEmailSettings());
+
+          await api.updateProspectStatus(r.website, "scanned");
+          ds.updateRecord(r.website, { status: "scanned", email: emailToUse || r.email });
+        }
+      } catch (e) {
+        console.error("batch scan failed:", e);
+        for (const r of toScan) {
+          await api.updateProspectStatus(r.website, "new");
+          ds.updateRecord(r.website, { status: "new" });
+        }
+      } finally {
+        setScanningUrl(null);
+      }
+    } else {
+      // ── Sequential path (Ollama/OpenAI or single item or toggle off) ───────
+      for (const r of toScan) {
+        await scanProspect({ ...r, status: "queued" });
+      }
     }
   }
 
@@ -598,7 +644,10 @@ export default function DiscoverPage() {
               Found <strong>{searchStats.total_found}</strong> businesses ·{" "}
               <strong>{searchStats.saved}</strong> new ·{" "}
               <span style={{ color: "var(--ink3)" }}>
-                {searchStats.skipped_no_website} no website · {searchStats.skipped_already_scanned} already scanned (skipped)
+                {searchStats.skipped_no_website} no website
+                {searchStats.skipped_already_scanned > 0 && ` · ${searchStats.skipped_already_scanned} already scanned`}
+                {searchStats.skipped_already_discovered > 0 && ` · ${searchStats.skipped_already_discovered} already in list`}
+                {(searchStats.skipped_already_scanned > 0 || searchStats.skipped_already_discovered > 0) && " (skipped)"}
               </span>
             </motion.div>
           )}
@@ -610,38 +659,9 @@ export default function DiscoverPage() {
           )}
         </AnimatePresence>
 
-        {/* Session picker + results */}
-        {sessions.length > 0 && (
+        {/* Results — shown when there are records, during loading, or when filters are active (so user can reset them) */}
+        {(records.length > 0 || loading || hasFilters) && (
           <>
-            {/* Session tabs */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: 11, color: "var(--ink3)", fontFamily: "var(--font-mono)" }}>Sessions:</span>
-              <button
-                onClick={() => setActiveSession(null)}
-                style={{
-                  padding: "3px 10px", fontSize: 11, borderRadius: 99, cursor: "pointer",
-                  border: `1px solid ${activeSession === null ? "var(--blue-line)" : "var(--border)"}`,
-                  background: activeSession === null ? "var(--blue-glow)" : "var(--surface)",
-                  color: activeSession === null ? "var(--blue)" : "var(--ink3)",
-                  fontFamily: "var(--font-mono)",
-                }}>All</button>
-              {sessions.map(s => (
-                <button key={s.session_id}
-                  onClick={() => setActiveSession(s.session_id)}
-                  title={`${s.keywords}${s.location ? " · " + s.location : ""}`}
-                  style={{
-                    padding: "3px 10px", fontSize: 11, borderRadius: 99, cursor: "pointer",
-                    border: `1px solid ${activeSession === s.session_id ? "var(--blue-line)" : "var(--border)"}`,
-                    background: activeSession === s.session_id ? "var(--blue-glow)" : "var(--surface)",
-                    color: activeSession === s.session_id ? "var(--blue)" : "var(--ink3)",
-                    fontFamily: "var(--font-mono)",
-                  }}>
-                  {s.keywords.split(",")[0].trim()}
-                  {s.location ? ` · ${s.location}` : ""}
-                  <span style={{ marginLeft: 5, opacity: 0.6 }}>({s.count})</span>
-                </button>
-              ))}
-            </div>
 
             {/* Toolbar */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
@@ -659,8 +679,8 @@ export default function DiscoverPage() {
                       {selected.size} selected
                     </span>
                     <button className="btn btn--sm btn--primary" onClick={scanSelected} disabled={!!scanningUrl}
-                      title="Scan selected">
-                      <ScanLine size={12} /> Scan
+                      title={settings.useBatchProcessing && getScanSettings().ai_provider === "claude" && selected.size > 1 ? "Scan selected (Anthropic Batch API)" : "Scan selected"}>
+                      <ScanLine size={12} /> {settings.useBatchProcessing && getScanSettings().ai_provider === "claude" && selected.size > 1 ? "Batch Scan" : "Scan"}
                     </button>
                     <button className="btn btn--sm btn--ghost" onClick={markContactSelected}
                       title="Mark Don't Contact">
@@ -691,7 +711,7 @@ export default function DiscoverPage() {
                   <Filter size={12} /> Filters
                 </button>
                 <button className="btn btn--ghost btn--sm"
-                  onClick={() => loadRecords(activeSession)} disabled={loading}>
+                  onClick={() => loadRecords()} disabled={loading}>
                   <RefreshCw size={12} className={loading ? "spin" : ""} /> Refresh
                 </button>
               </div>
@@ -756,7 +776,17 @@ export default function DiscoverPage() {
             {records.length === 0 && !loading ? (
               <div style={{ textAlign: "center", padding: "60px 0", color: "var(--ink3)" }}>
                 <Inbox size={36} style={{ marginBottom: 10, opacity: 0.4 }} />
-                <p style={{ margin: 0, fontSize: 14 }}>No prospects yet. Run a search above.</p>
+                {hasFilters ? (
+                  <>
+                    <p style={{ margin: 0, fontSize: 14 }}>No prospects match the current filters.</p>
+                    <button className="btn btn--sm btn--ghost" style={{ marginTop: 12 }}
+                      onClick={() => { settings.setMany({ discoverFilterStatus: "all", discoverFilterHasEmail: "all", discoverSearch: "" }); }}>
+                      Clear filters
+                    </button>
+                  </>
+                ) : (
+                  <p style={{ margin: 0, fontSize: 14 }}>No prospects yet. Run a search above.</p>
+                )}
               </div>
             ) : (
               <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden" }}>
@@ -764,7 +794,7 @@ export default function DiscoverPage() {
                 {/* Header */}
                 <div style={{
                   display: "grid",
-                  gridTemplateColumns: "32px 2fr 90px 80px 110px 160px 100px 120px",
+                  gridTemplateColumns: "32px 2fr 90px 80px 110px 160px 110px 148px",
                   padding: "8px 16px", borderBottom: "1px solid var(--border)",
                   background: "var(--bg3)", fontSize: 10, fontWeight: 700,
                   letterSpacing: "0.08em", textTransform: "uppercase",
@@ -787,7 +817,7 @@ export default function DiscoverPage() {
                 {/* Rows */}
                 <AnimatePresence initial={false}>
                   {paginated.map((rec, i) => {
-                    const isScanning = scanningUrl === rec.website;
+                    const isScanning = scanningUrl === rec.website || (scanningUrl === "__batch__" && rec.status === "scanning");
                     const isSelected = selected.has(rec.website);
                     return (
                       <motion.div key={rec.website || i}
@@ -795,7 +825,7 @@ export default function DiscoverPage() {
                         transition={{ delay: i * 0.01 }}
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "32px 2fr 90px 80px 110px 160px 100px 120px",
+                          gridTemplateColumns: "32px 2fr 90px 80px 110px 160px 110px 148px",
                           padding: "10px 16px", alignItems: "center",
                           borderBottom: i < paginated.length - 1 ? "1px solid var(--border)" : "none",
                           background: isSelected ? "var(--blue-glow)" : isScanning ? "rgba(59,130,246,0.06)" : "transparent",
@@ -877,8 +907,6 @@ export default function DiscoverPage() {
                             className={`btn btn--sm ${rec.status === "dont_contact" ? "btn--primary" : "btn--ghost"}`}
                             onClick={async (e) => {
                               e.stopPropagation();
-                              // Toggle: if currently dont_contact, restore previous status;
-                              // otherwise save current status and mark dont_contact
                               let next;
                               if (rec.status === "dont_contact") {
                                 next = rec._prevStatus || "pending";
@@ -886,10 +914,17 @@ export default function DiscoverPage() {
                                 next = "dont_contact";
                               }
                               await api.updateProspectStatus(rec.website, next);
-                              setRecords(recs => recs.map(r => r.website === rec.website
-                                ? { ...r, status: next, _prevStatus: rec.status !== "dont_contact" ? rec.status : r._prevStatus }
-                                : r
-                              ));
+                              setRecords(recs => {
+                                const updated = recs.map(r => r.website === rec.website
+                                  ? { ...r, status: next, _prevStatus: rec.status !== "dont_contact" ? rec.status : r._prevStatus }
+                                  : r
+                                );
+                                // If a status filter is active and the new status doesn't match, remove from list immediately
+                                if (filterStatus !== "all" && next !== filterStatus) {
+                                  return updated.filter(r => r.website !== rec.website);
+                                }
+                                return updated;
+                              });
                             }}
                             title={rec.status === "dont_contact" ? "Unmark Don't Contact" : "Mark Don't Contact"}>
                             <Ban size={12} />
@@ -906,7 +941,8 @@ export default function DiscoverPage() {
                               <MessageSquare size={12} style={{ color: rec.emailSent?.got_response ? "var(--green)" : "inherit" }} />
                             </motion.button>
                           )}
-                          {["scanned", "dont_contact", "emailed", "bounced"].includes(rec.status) && (
+                          {(["scanned", "emailed", "bounced"].includes(rec.status) ||
+                            (rec.status === "dont_contact" && ["scanned", "emailed", "bounced"].includes(rec._prevStatus))) && (
                             <motion.button whileHover={{ scale: 1.08 }}
                               className="btn btn--sm btn--ghost"
                               onClick={async () => {
@@ -992,8 +1028,16 @@ export default function DiscoverPage() {
           </>
         )}
 
-        {/* Empty state — no sessions yet */}
-        {sessions.length === 0 && !searching && (
+        {/* Error state — shown when backend is unreachable */}
+        {loadError && records.length === 0 && !loading && (
+          <div style={{ textAlign: "center", padding: "60px 0", color: "var(--ink3)" }}>
+            <div style={{ fontSize: 13, color: "#f87171", marginBottom: 8 }}>⚠ {loadError}</div>
+            <button className="btn btn--sm btn--ghost" onClick={() => loadRecords()}>Retry now</button>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {records.length === 0 && !loading && !searching && !loadError && (
           <div style={{ textAlign: "center", padding: "80px 0", color: "var(--ink3)" }}>
             <Search size={40} style={{ marginBottom: 12, opacity: 0.3 }} />
             <p style={{ margin: 0, fontSize: 14 }}>Enter keywords and a location to discover businesses.</p>

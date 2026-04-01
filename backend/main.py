@@ -35,6 +35,7 @@ from .ai_client import (
     _extract_json,
 )
 from .db import upsert_scan, ensure_indexes
+from .db import prospects_col
 from .models import (
     AnalyzeRequest,
     CrawlRequest,
@@ -45,12 +46,19 @@ from .routes_history import router as history_router
 from .routes_discover import router as discover_router
 from .utils import extract_emails_from_html
 
-app = FastAPI(title="Prism Audit API", version="1.7.0")
+app = FastAPI(title="Prism Audit API", version="4.1.0")
 
 
 @app.on_event("startup")
 async def startup_event():
     await ensure_indexes()
+    # Reset any prospects stuck in "scanning" or "queued" from a previous crashed session
+    result = await prospects_col().update_many(
+        {"status": {"$in": ["scanning", "queued"]}},
+        {"$set": {"status": "new"}},
+    )
+    if result.modified_count:
+        print(f"[startup] ↩ Reset {result.modified_count} stuck scanning/queued prospect(s) → new")
 
 
 app.add_middleware(
@@ -503,6 +511,8 @@ async def _do_batch_analyze(req) -> dict:
     print(f"[batch-analyze] ═══ START {len(req.urls)} URLs provider={req.settings.ai_provider}")
 
     # Step 1: Take all screenshots in parallel
+    print(f"[batch-analyze] 📸 Taking {len(req.urls)} screenshots in parallel...")
+    t_shots = time.monotonic()
     async def capture(url: str):
         try:
             shot, html, height = await take_screenshot(url, screenshot_svc)
@@ -511,6 +521,8 @@ async def _do_batch_analyze(req) -> dict:
             return url, None, "", 0, str(e)
 
     captures = await asyncio.gather(*[capture(u) for u in req.urls])
+    ok_count = sum(1 for _, _, _, _, err in captures if not err)
+    print(f"[batch-analyze] ✓ Screenshots done in {time.monotonic() - t_shots:.1f}s — {ok_count}/{len(req.urls)} succeeded")
 
     # Step 2: Build batch AI requests
     batch_requests = []
@@ -534,10 +546,11 @@ async def _do_batch_analyze(req) -> dict:
     if not batch_requests:
         return {"results": {}, "error": "All screenshots failed"}
 
-    print(f"[batch-analyze] submitting {len(batch_requests)} AI requests")
-
+    print(f"[batch-analyze] 🚀 Submitting {len(batch_requests)} requests to AI ({req.settings.ai_provider})...")
+    t_ai = time.monotonic()
     # Step 3: Run batch (Claude) or sequential (others)
     ai_results = await call_ai_batch(batch_requests, req.settings)
+    print(f"[batch-analyze] ✓ AI results received in {time.monotonic() - t_ai:.1f}s — {len(ai_results)} returned")
 
     # Step 4: Post-process and save each result
     results: dict = {}
