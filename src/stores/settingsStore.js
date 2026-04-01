@@ -34,7 +34,7 @@ export const useSettingsStore = create(
       fromAddress: "zielinski.marcin@shinrai.pro",
       autoGenerateEmail: false,
       historyPerPage: 15,
-      visionMode: false,
+      visionMode: true,
       historySortBy: "scanned_at",
       historySortDir: "desc",
       historyFilterEmail: "all",

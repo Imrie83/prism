@@ -68,10 +68,10 @@ VISUAL & LAYOUT (analyse from the screenshot carefully)
 UX PATTERNS
 - navigation_ux: Navigation structure problems — too many items (10+), unclear hierarchy, no breadcrumbs, missing mobile hamburger. Do NOT use this for navigation translation issues — use untranslated_nav_ui instead.
 - social_proof: Missing trust indicators — no testimonials, reviews, client logos, case studies, or certifications visible on the page
-- contact_accessibility: Contact information is genuinely difficult to find or use for a Western visitor — no visible email, no English contact form, no international phone format. Do NOT flag if contact details exist but are merely formatted in a Japanese style.
+- contact_accessibility: Contact information is genuinely absent or inaccessible across the entire page including the footer — no visible email, no international phone format, no English contact form anywhere. Do NOT flag if contact details exist in the footer or elsewhere but are merely below the fold or formatted in a Japanese style. The semantic extract includes footer content — check it before flagging this.
 - form_ux: Forms with Japanese-specific fields (furigana/reading), confusing field order, or no English labels
 - pdf_heavy: Key content buried in downloadable PDFs instead of web pages — Westerners expect HTML content
-- trust_signals: Missing credibility markers — no SSL indicator, no physical address, no company details, looks anonymous
+- trust_signals: Missing credibility markers across the entire page — no physical address, no company registration, no SSL indicator, looks completely anonymous. Check the footer content in the semantic extract before flagging — Japanese businesses typically put address and registration details there.
 
 SKIP THESE (too minor, too common, or low real-world impact for English-speaking visitors):
 - date_number_format: Date/number formatting differences are noticed by almost no Western visitor and have zero impact on whether they convert. Do not flag this.

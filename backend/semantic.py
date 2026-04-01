@@ -2,6 +2,12 @@
 Semantic HTML extractor for Prism audit.
 Parses a rendered HTML page into structured groups (nav, hero, footer, etc.)
 so the AI can reason about content and layout without processing raw HTML.
+
+Key design decisions:
+- Footer is always extracted, regardless of group count — contact info, address,
+  phone, and business registration live there and must never be truncated away.
+- Groups cap raised to 30 (from 20) and elements per group to 20 (from 15).
+- Total output cap raised to 10000 chars (from 6000).
 """
 
 from bs4 import BeautifulSoup, Tag
@@ -49,7 +55,6 @@ def extract_semantic_groups(html: str) -> str:
             return []
         name = container.name.lower() if container.name else ""
 
-        # If this is a leaf semantic element, extract it directly
         text = container.get_text(" ", strip=True)
         if name in ("h1", "h2", "h3", "h4", "h5", "h6"):
             return [{"role": "heading", "level": name, "text": text[:300]}] if text else []
@@ -85,18 +90,15 @@ def extract_semantic_groups(html: str) -> str:
                 }
             ]
 
-        # Otherwise, recurse into children
         elements = []
         for tag in container.find_all(True, recursive=False):
             if isinstance(tag, Tag):
                 elements.extend(extract_elements(tag, depth + 1))
 
-        # Fallback: if a structural container has text but no semantic children tags,
-        # treat the whole container as a paragraph.
         if (
             not elements
             and text
-            and name in ("div", "section", "article", "header", "footer", "nav", "aside", "main", "span")
+            and name in ("div", "section", "article", "header", "footer", "nav", "aside", "main", "span", "address")
         ):
             elements.append({"role": "paragraph", "text": text[:500]})
 
@@ -109,7 +111,6 @@ def extract_semantic_groups(html: str) -> str:
         "article",
         "section",
         "aside",
-        "footer",
         "[role='banner']",
         "[role='navigation']",
         "[role='main']",
@@ -119,6 +120,24 @@ def extract_semantic_groups(html: str) -> str:
     visited = set()
     groups = []
 
+    # ── Always extract footer first ───────────────────────────────────────────
+    # Contact details, address, phone, business registration, and social links
+    # live in the footer and must never be lost to group-count truncation.
+    footer_els = soup.select("footer, [role='contentinfo'], [class*='footer'], [id*='footer']")
+    footer_groups_added = set()
+    for el in footer_els:
+        eid = id(el)
+        if eid in footer_groups_added:
+            continue
+        footer_groups_added.add(eid)
+        visited.add(eid)
+        for d in el.find_all(True):
+            visited.add(id(d))
+        elements = extract_elements(el)
+        if elements:
+            groups.append({"type": "footer", "elements": elements, "_priority": True})
+
+    # ── Then process all other semantic sections ──────────────────────────────
     for selector in SELECTORS:
         try:
             for el in soup.select(selector):
@@ -130,27 +149,28 @@ def extract_semantic_groups(html: str) -> str:
                     visited.add(id(d))
                 elements = extract_elements(el)
                 if elements:
-                    groups.append(
-                        {"type": classify_container(el), "elements": elements}
-                    )
+                    groups.append({"type": classify_container(el), "elements": elements})
         except Exception:
             continue
 
-    # Fallback: any unvisited body direct children
+    # ── Fallback: unvisited body direct children ──────────────────────────────
     body = soup.find("body")
     if body:
         for child in body.find_all(True, recursive=False):
             if id(child) not in visited and isinstance(child, Tag):
                 elements = extract_elements(child)
                 if elements:
-                    groups.append(
-                        {"type": classify_container(child), "elements": elements}
-                    )
+                    groups.append({"type": classify_container(child), "elements": elements})
+
+    # ── Render — footer first, then rest, cap at 30 groups ───────────────────
+    priority = [g for g in groups if g.get("_priority")]
+    rest = [g for g in groups if not g.get("_priority")]
+    ordered = priority + rest
 
     lines = ["=== PAGE SEMANTIC STRUCTURE ===\n"]
-    for i, g in enumerate(groups[:20]):
+    for i, g in enumerate(ordered[:30]):
         lines.append(f"[GROUP {i + 1}: {g['type'].upper()}]")
-        for el in g["elements"][:15]:
+        for el in g["elements"][:20]:
             role = el.get("role", "?")
             if role == "heading":
                 lines.append(f"  {el['level'].upper()}: {el['text']}")
@@ -169,7 +189,7 @@ def extract_semantic_groups(html: str) -> str:
         lines.append("")
 
     result = "\n".join(lines)
-    if len(result) > 6000:
-        result = result[:6000] + "\n[... truncated ...]"
-    print(f"[extractor] {len(groups)} groups, {len(result)} chars")
+    if len(result) > 10000:
+        result = result[:10000] + "\n[... truncated ...]"
+    print(f"[extractor] {len(ordered)} groups ({len(priority)} footer-priority), {len(result)} chars")
     return result
