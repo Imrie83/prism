@@ -162,6 +162,21 @@ export default function SettingsModal({ onClose }) {
                 <input value={s.emailAnthropicModel} onChange={e => s.setField("emailAnthropicModel", e.target.value)} placeholder="claude-sonnet-4-6" />
               </div>
             )}
+
+            {/* Email prompt variant */}
+            <div className="field" style={{ marginTop: 12 }}>
+              <label>Email Prompt Style</label>
+              <select value={s.emailPromptVariant || "standard"} onChange={e => s.setField("emailPromptVariant", e.target.value)}
+                style={{ width: "100%" }}>
+                <option value="standard">Standard — natural, site-specific writing</option>
+                <option value="experimental">Experimental — broader issues, full services pitch</option>
+              </select>
+              <p className="text-muted text-sm" style={{ marginTop: 4 }}>
+                {(s.emailPromptVariant || "standard") === "experimental"
+                  ? "Groups issues into broader categories (translation coverage, UX, copy quality) and pitches the full range of services including ad-hoc work and web design."
+                  : "Describes the visitor experience holistically. Best for sites where one clear issue dominates."}
+              </p>
+            </div>
           </div>
 
           {/* Token costs */}

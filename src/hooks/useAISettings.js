@@ -39,6 +39,7 @@ export function useAISettings() {
       your_title: s.yourTitle,
       your_email: s.yourEmail,
       your_website: s.yourWebsite,
+      email_prompt_variant: s.emailPromptVariant || "standard",
     };
   }
 

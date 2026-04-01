@@ -194,9 +194,8 @@ export const api = {
     return res.json();
   },
 
-  async getProspects(sessionId, sortBy = "discovered_at", sortDir = "desc", filterStatus = "all", filterHasEmail = "all", search = "", page = 1, perPage = 25) {
-    const params = new URLSearchParams({ sort_by: sortBy, sort_dir: sortDir, filter_status: filterStatus, filter_has_email: filterHasEmail, page, per_page: perPage });
-    if (sessionId) params.set("session_id", sessionId);
+  async getProspects(sortBy = "discovered_at", sortDir = "desc", filterStatus = "all", filterHasEmail = "all", search = "") {
+    const params = new URLSearchParams({ sort_by: sortBy, sort_dir: sortDir, filter_status: filterStatus, filter_has_email: filterHasEmail, per_page: 2000 });
     if (search) params.set("search", search);
     const res = await fetch(`${BASE}/discover/prospects?${params}`);
     return res.json();

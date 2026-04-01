@@ -31,18 +31,24 @@ router = APIRouter()
 async def discover_search(req: DiscoverSearchRequest):
     """Scrape Google Maps — streams NDJSON progress events, final line is the result."""
     session_id = str(uuid.uuid4())[:8]
-    # Collect already-scanned URLs
+    # Collect already-scanned URLs (from scan history)
     cursor = scans_col().find({}, {"_id": 0, "url": 1})
     scanned_docs = await cursor.to_list(length=None)
     scanned_urls = {d["url"] for d in scanned_docs if d.get("url")}
+    # Collect already-discovered websites (from prospects) — skip these too
+    cursor2 = prospects_col().find({}, {"_id": 0, "website": 1})
+    prospect_docs = await cursor2.to_list(length=None)
+    known_websites = {d["website"] for d in prospect_docs if d.get("website")}
     print(
-        f"[discover] session={session_id} keywords={req.keywords!r} location={req.location!r} limit={req.limit}"
+        f"[discover] session={session_id} keywords={req.keywords!r} location={req.location!r} limit={req.limit} "
+        f"(skipping {len(scanned_urls)} scanned + {len(known_websites)} already-discovered)"
     )
 
     async def stream():
         saved = []
         skipped_no_website = 0
         skipped_already_scanned = 0
+        skipped_already_discovered = 0
 
         svc_url = os.environ.get("DISCOVER_SERVICE_URL", "http://discover:3001")
         async with httpx.AsyncClient(timeout=900.0) as client:
@@ -90,6 +96,9 @@ async def discover_search(req: DiscoverSearchRequest):
                                 if website in scanned_urls:
                                     skipped_already_scanned += 1
                                     continue
+                                if website in known_websites:
+                                    skipped_already_discovered += 1
+                                    continue
                                 biz["session_id"] = session_id
                                 biz["keywords"] = req.keywords
                                 biz["location"] = req.location
@@ -97,17 +106,14 @@ async def discover_search(req: DiscoverSearchRequest):
                                 biz["discovered_at"] = time.strftime(
                                     "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
                                 )
-                                existing = await get_prospect(website)
-                                if not existing:
-                                    await prospects_col().insert_one(biz)
-                                elif existing.get("status") not in ("scanned", "emailed"):
-                                    await prospects_col().update_one(
-                                        {"website": website}, {"$set": biz}
-                                    )
+                                await prospects_col().insert_one(biz)
+                                known_websites.add(website)  # prevent duplicates within this batch
                                 saved.append(biz)
 
                             print(
-                                f"[discover] saved={len(saved)} skipped_no_site={skipped_no_website} skipped_scanned={skipped_already_scanned}"
+                                f"[discover] saved={len(saved)} skipped_no_site={skipped_no_website} "
+                                f"skipped_scanned={skipped_already_scanned} "
+                                f"skipped_discovered={skipped_already_discovered}"
                             )
                             yield (
                                 json.dumps(
@@ -118,6 +124,7 @@ async def discover_search(req: DiscoverSearchRequest):
                                         "saved": len(saved),
                                         "skipped_no_website": skipped_no_website,
                                         "skipped_already_scanned": skipped_already_scanned,
+                                        "skipped_already_discovered": skipped_already_discovered,
                                     }
                                 ).encode()
                                 + b"\n"
@@ -131,7 +138,7 @@ async def discover_search(req: DiscoverSearchRequest):
 @router.get("/api/discover/prospects")
 async def get_prospects(
     page: int = 1,
-    per_page: int = 25,
+    per_page: int = 500,
     sort_by: str = "discovered_at",
     sort_dir: str = "desc",
     filter_status: str = "all",

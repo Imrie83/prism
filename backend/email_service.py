@@ -30,7 +30,7 @@ from .models import (
     CancelScheduleRequest,
     BatchGenerateEmailRequest,
 )
-from .prompts import EMAIL_SYSTEM
+from .prompts import EMAIL_SYSTEM, EMAIL_SYSTEM_EXPERIMENTAL
 
 router = APIRouter()
 
@@ -346,7 +346,7 @@ def build_email_prompt(scan: dict) -> str:
         else "making the site fully navigable and readable for English-speaking visitors"
     )
 
-    return f"""Write a bilingual cold outreach email for this Japanese business. Follow your system prompt structure precisely.
+    return f"""Write a bilingual cold outreach email for this Japanese business. Follow your system prompt's writing philosophy — natural, human, specific to this site.
 
 SITE DETAILS:
   URL: {url}
@@ -354,25 +354,21 @@ SITE DETAILS:
   English-readiness score: {score}/100
   What the site is about: {summary}
 
-GENUINE POSITIVES to draw the compliment from (use one of these specifically):
+GENUINE STRENGTHS of this site (draw the compliment from one of these — be specific):
   {positives_text}
 
-SPECIFIC OPPORTUNITY to mention (frame as upside — what international visitors could gain):
+WHAT AN INTERNATIONAL VISITOR EXPERIENCES on this site:
   {hints_text}
 
-SERVICES TO REFERENCE (choose the 2 most relevant to this site's situation):
-  - English translation and localisation of Japanese website content
+Use this to describe the real experience — not just a list of missing elements, but what it means for someone who arrives curious and wants to book, enquire, or learn more. If the site is largely untranslated, say so in human terms: they can see it's a quality business, but can't navigate, can't find prices, can't work out how to get in touch.
+
+SERVICES MOST RELEVANT HERE (pick 1-2, weave in naturally):
+  - English translation and localisation of Japanese content
   - Natural English copywriting (replacing machine-translated text)
-  - Full web development and redesign if they want to go further
+  - Full web development and redesign
   - UX improvements for international visitors
 
-REMEMBER:
-- Open with a formal self-introduction, not a compliment
-- Acknowledge their time is valuable before making your pitch
-- The compliment must be SPECIFIC to this site, not generic
-- Keep English under 150 words total
-- One clear ask at the end — nothing more
-- The personalised audit report is embedded directly in this email below the message — do NOT say it is "available at" any website or URL. Say something like "I've included a personalised report below" or "you'll find a brief audit below this message"
+The personalised audit report is embedded directly below this message — reference it naturally, once.
 
 Return the bilingual email as JSON following your system prompt exactly."""
 
@@ -500,7 +496,8 @@ async def _do_generate_email(
 async def generate_email(req: GenerateEmailRequest):
     """Streams keepalives while AI writes the email — prevents gateway 504s."""
     s = req.settings
-    system = EMAIL_SYSTEM.format(
+    _tpl = EMAIL_SYSTEM_EXPERIMENTAL if getattr(s, "email_prompt_variant", "standard") == "experimental" else EMAIL_SYSTEM
+    system = _tpl.format(
         name=s.your_name,
         title=s.your_title,
         website=s.your_website,
@@ -686,7 +683,8 @@ async def _do_batch_generate_email(req: BatchGenerateEmailRequest) -> dict:
 
     t0 = time.monotonic()
     s = req.settings
-    system = EMAIL_SYSTEM.format(
+    _tpl = EMAIL_SYSTEM_EXPERIMENTAL if getattr(s, "email_prompt_variant", "standard") == "experimental" else EMAIL_SYSTEM
+    system = _tpl.format(
         name=s.your_name,
         title=s.your_title,
         website=s.your_website,
