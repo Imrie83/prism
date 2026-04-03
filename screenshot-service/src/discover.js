@@ -11,8 +11,10 @@
 
 import { chromium } from "playwright";
 
-const SCROLL_PAUSE_MIN = 500;
-const SCROLL_PAUSE_MAX = 1000;
+const SCROLL_PAUSE_MIN = 600;
+const SCROLL_PAUSE_MAX = 1200;
+const STABLE_ROUNDS_LIMITED = 4;   // how many stable scrolls before giving up (limited mode)
+const STABLE_ROUNDS_UNLIMITED = 8; // more patience when limit=0 (All)
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
@@ -135,13 +137,14 @@ async function _searchOneMaps({ searchUrl, limit, context, DEBUG }) {
     // Scroll to load all result cards
     const resultsPanel = await page.$('div[role="feed"], div.m6QErb[style*="overflow"]');
     let prevCount = 0, stableRounds = 0;
+    const maxStableRounds = limit === 0 ? STABLE_ROUNDS_UNLIMITED : STABLE_ROUNDS_LIMITED;
 
     while (true) {
       const cards = await page.$$('a[href*="/maps/place/"]');
       const n = cards.length;
       if (limit > 0 && n >= limit) { console.log(`[discover] limit ${limit} reached`); break; }
       if (n === prevCount) {
-        if (++stableRounds >= 4) { console.log(`[discover] stable at ${n} results`); break; }
+        if (++stableRounds >= maxStableRounds) { console.log(`[discover] stable at ${n} results (${stableRounds} rounds)`); break; }
       } else { stableRounds = 0; console.log(`[discover] ${n} results loaded...`); }
       prevCount = n;
       if (resultsPanel) {

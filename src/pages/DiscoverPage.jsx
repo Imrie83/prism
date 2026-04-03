@@ -30,10 +30,10 @@ function RatingStars({ rating }) {
 
 
 const LIMIT_OPTIONS = [
-  { label: "60", value: 60 },
+  { label: "60",  value: 60 },
   { label: "120", value: 120 },
   { label: "200", value: 200 },
-  { label: "All", value: 0 },
+  { label: "All", value: 0 },  // 0 = no limit — scroll until Google stops serving results
 ];
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100];
@@ -291,8 +291,6 @@ export default function DiscoverPage() {
 
     if (useBatch) {
       // ── Anthropic Batch API path ───────────────────────────────────────────
-      // Keep status as "queued" — Anthropic processes async, no single "scanning" URL
-      // The backend handles screenshots + submission; we just wait for the result.
       setScanningUrl("__batch__");
 
       try {
@@ -301,6 +299,8 @@ export default function DiscoverPage() {
         const batchResult = await api.batchAnalyze(urls, scanSettings, "batch", settings.visionMode, null);
         const results = batchResult?.results || {};
         console.log(`[batch-scan] Got ${Object.keys(results).length} results back`);
+
+        const emailItems = [];
 
         for (const r of toScan) {
           const result = results[r.website];
@@ -312,7 +312,7 @@ export default function DiscoverPage() {
 
           const foundEmail = result.emails_found?.[0];
           const emailToUse = r.email || foundEmail || (() => {
-            try { return `info@${new URL(r.website).hostname.replace(/^www\\./, "")}`; } catch { return null; }
+            try { return `info@${new URL(r.website).hostname.replace(/^www\./, "")}`; } catch { return null; }
           })();
 
           if (emailToUse && !r.email) await api.updateProspectEmail(r.website, emailToUse);
@@ -321,10 +321,39 @@ export default function DiscoverPage() {
           scanStore.finishShallowSilent(runId, result);
 
           if (emailToUse) emailStore.setRecipient(r.website, emailToUse);
-          if (settings.autoGenerateEmail) emailStore.generate(r.website, result, getEmailSettings());
 
           await api.updateProspectStatus(r.website, "scanned");
           ds.updateRecord(r.website, { status: "scanned", email: emailToUse || r.email });
+
+          if (settings.autoGenerateEmail) {
+            emailItems.push({ scan_result: result });
+          }
+        }
+
+        // Auto-generate emails — batch API when Claude + batch enabled, sequential otherwise
+        if (emailItems.length > 0) {
+          const emailSettings = getEmailSettings();
+          const isClaude = emailSettings.ai_provider === "claude";
+          if (isClaude) {
+            console.log(`[batch-scan] Auto-generating ${emailItems.length} emails via batch API...`);
+            try {
+              const emailResult = await api.batchGenerateEmail(emailItems, emailSettings);
+              const emailResults = emailResult?.results || {};
+              for (const [url, data] of Object.entries(emailResults)) {
+                if (!data || data.error) continue;
+                useEmailStore.setState(s => ({
+                  emails: { ...s.emails, [url]: { ...(s.emails[url] || {}), status: "ready", subject: data.subject, htmlContent: data.html } }
+                }));
+              }
+            } catch (e) {
+              console.error("batch email generation failed:", e);
+            }
+          } else {
+            for (const item of emailItems) {
+              const url = item.scan_result?.url;
+              if (url) emailStore.generate(url, item.scan_result, emailSettings);
+            }
+          }
         }
       } catch (e) {
         console.error("batch scan failed:", e);
@@ -647,7 +676,8 @@ export default function DiscoverPage() {
                 {searchStats.skipped_no_website} no website
                 {searchStats.skipped_already_scanned > 0 && ` · ${searchStats.skipped_already_scanned} already scanned`}
                 {searchStats.skipped_already_discovered > 0 && ` · ${searchStats.skipped_already_discovered} already in list`}
-                {(searchStats.skipped_already_scanned > 0 || searchStats.skipped_already_discovered > 0) && " (skipped)"}
+                {searchStats.skipped_blocked > 0 && ` · ${searchStats.skipped_blocked} aggregator sites`}
+                {(searchStats.skipped_already_scanned > 0 || searchStats.skipped_already_discovered > 0 || searchStats.skipped_blocked > 0) && " (skipped)"}
               </span>
             </motion.div>
           )}

@@ -206,9 +206,12 @@ async def list_scans(
     elif filter_email == "none":
         query["email"] = {"$exists": False}
     elif filter_email == "not_sent":
-        query["$or"] = [
-            {"email": {"$exists": False}},
-            {"email.sent_at": {"$exists": False}},
+        query["$and"] = [
+            {"$or": [
+                {"email": {"$exists": False}},
+                {"email.sent_at": {"$exists": False}},
+            ]},
+            {"email.status": {"$ne": "dont_contact"}},
         ]
     elif filter_email == "got_response":
         query["email.got_response"] = True

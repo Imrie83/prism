@@ -110,102 +110,133 @@ UX_TYPES = {
 
 
 def build_report_card_html(scan: dict, report_summary: list[str] | None = None) -> str:
-    """Build premium HTML report card for email embedding.
-
-    If report_summary (list of JP paragraphs) is provided, renders the narrative
-    summary version instead of the issue table. Falls back to issue table if None.
-    """
     score = scan.get("score", 0)
-    summary = scan.get("summary", "")
     url = scan.get("url", "")
+    summary = scan.get("summary", "")
     issues = scan.get("issues", [])
     total = scan.get("totalIssues", len(issues))
 
-    score_color = "#16a34a" if score >= 75 else "#d97706" if score >= 45 else "#dc2626"
-    score_bg = "#f0fdf4" if score >= 75 else "#fffbeb" if score >= 45 else "#fef2f2"
-    jp_score_label = "良好" if score >= 75 else "要改善" if score >= 45 else "要対応"
+    score_color = "#dc2626" if score < 45 else "#d97706" if score < 75 else "#16a34a"
+    score_text  = "#991b1b" if score < 45 else "#92400e" if score < 75 else "#166534"
+    jp_score_label = "要対応" if score < 45 else "要改善" if score < 75 else "良好"
     domain = url.replace("https://", "").replace("http://", "").split("/")[0]
 
     pct = max(0, min(100, score))
-    # Score ring
-    ring_html = f"""
-      <div style="position:relative;width:88px;height:88px;flex-shrink:0;">
-        <div style="width:88px;height:88px;border-radius:50%;
-                    background:conic-gradient({score_color} {pct}%, #e5e7eb {pct}% 100%);
-                    display:flex;align-items:center;justify-content:center;">
-          <div style="width:64px;height:64px;border-radius:50%;background:#ffffff;
-                      display:flex;flex-direction:column;align-items:center;justify-content:center;
-                      box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-            <span style="font-size:22px;font-weight:800;color:{score_color};line-height:1;">{score}</span>
-            <span style="font-size:9px;color:#9ca3af;font-weight:500;">/100</span>
-          </div>
-        </div>
-      </div>"""
+    circ = 213.6
+    dash_offset = round(circ - (pct / 100) * circ, 1)
+
+    ring_svg = (
+        '<svg width="80" height="80" viewBox="0 0 80 80">'
+        '<circle cx="40" cy="40" r="34" fill="none" stroke="#e5e7eb" stroke-width="8"/>'
+        f'<circle cx="40" cy="40" r="34" fill="none" stroke="{score_color}" stroke-width="8"'
+        f' stroke-dasharray="{circ}" stroke-dashoffset="{dash_offset}"'
+        ' stroke-linecap="round" transform="rotate(-90 40 40)"/>'
+        f'<text x="40" y="37" text-anchor="middle" font-size="20" font-weight="800"'
+        f' fill="{score_color}" font-family="-apple-system,sans-serif">{score}</text>'
+        '<text x="40" y="49" text-anchor="middle" font-size="9" fill="#9ca3af"'
+        ' font-family="-apple-system,sans-serif">/100</text>'
+        '</svg>'
+    )
 
     counts = scan.get("issueCounts", {})
-    counts_html = ""
-    for sev, col in [("high", "#dc2626"), ("medium", "#d97706"), ("low", "#16a34a")]:
+    pills_html = ""
+    for sev, bg, border, col, label in [
+        ("high",   "#fef2f2", "#fecaca", "#991b1b", "重要"),
+        ("medium", "#fffbeb", "#fde68a", "#92400e", "中程度"),
+        ("low",    "#f0fdf4", "#bbf7d0", "#166534", "軽微"),
+    ]:
         n = counts.get(sev, 0)
         if n:
-            counts_html += f'<span style="font-size:11px;font-weight:700;color:{col};margin-right:12px;">▲ {n} {JP_SEV.get(sev, sev)}</span>'
+            pills_html += (
+                f'<span style="font-size:11px;font-weight:700;color:{col};'
+                f'background:{bg};padding:3px 9px;border-radius:20px;'
+                f'border:0.5px solid {border};white-space:nowrap;margin-right:5px;">'
+                f'&#9650; {n} {label}</span>'
+            )
 
-    # ── Narrative summary version (new) ──────────────────────────────────────
     if report_summary:
-        summary_html = "".join(
-            f'<p style="font-size:12px;color:#374151;line-height:1.8;margin:0 0 14px;'
-            f'padding-left:14px;border-left:3px solid {score_color}18;">{p}</p>'
-            for p in report_summary if p
+        cards_meta = [
+            ("現状",       "#fca5a5", "#991b1b"),
+            ("改善の機会", "#93c5fd", "#1d4ed8"),
+            ("ご提案",     "#6ee7b7", "#065f46"),
+        ]
+        para_cards = ""
+        for i, para in enumerate(report_summary[:3]):
+            if not para:
+                continue
+            lbl, b_col, l_col = cards_meta[i] if i < len(cards_meta) else cards_meta[-1]
+            para_cards += (
+                f'<div style="margin-bottom:10px;padding:12px 14px;'
+                f'background:#f9fafb;border-radius:8px;border-left:3px solid {b_col};">'
+                f'<div style="font-size:10px;font-weight:700;color:{l_col};'
+                f'letter-spacing:0.07em;text-transform:uppercase;margin-bottom:6px;">{lbl}</div>'
+                f'<p style="font-size:12px;color:#374151;line-height:1.75;margin:0;">{para}</p>'
+                f'</div>'
+            )
+
+        header = (
+            '<div style="background:#1e2d7d;padding:16px 22px;'
+            'display:flex;align-items:center;justify-content:space-between;">'
+            '<div style="display:flex;align-items:center;gap:10px;">'
+            '<div style="width:28px;height:28px;border-radius:6px;'
+            'background:rgba(165,180,252,0.18);'
+            'display:flex;align-items:center;justify-content:center;">'
+            '<div style="width:11px;height:11px;border-radius:50%;background:#a5b4fc;"></div>'
+            '</div>'
+            '<div>'
+            '<div style="color:#ffffff;font-size:12px;font-weight:700;'
+            'letter-spacing:0.06em;text-transform:uppercase;">Shinrai Audit</div>'
+            '<div style="color:#818cf8;font-size:10px;margin-top:1px;">'
+            '信頼ウェブ &middot; English Readiness Report</div>'
+            '</div>'
+            '</div>'
+            f'<div style="color:#a5b4fc;font-size:11px;font-family:monospace;'
+            f'background:rgba(255,255,255,0.07);padding:4px 10px;'
+            f'border-radius:6px;border:0.5px solid rgba(165,180,252,0.2);">{domain}</div>'
+            '</div>'
+        )
+        score_band = (
+            '<div style="display:flex;align-items:stretch;border-bottom:0.5px solid #e5e7eb;">'
+            '<div style="padding:20px 22px;display:flex;flex-direction:column;'
+            'align-items:center;justify-content:center;gap:6px;'
+            'border-right:0.5px solid #e5e7eb;min-width:110px;">'
+            + ring_svg +
+            f'<div style="font-size:11px;font-weight:700;color:{score_text};'
+            f'letter-spacing:0.04em;">{jp_score_label}</div>'
+            '</div>'
+            '<div style="padding:18px 20px;flex:1;">'
+            '<div style="font-size:10px;color:#6b7280;font-weight:700;'
+            'letter-spacing:0.07em;text-transform:uppercase;margin-bottom:10px;">英語対応スコア</div>'
+            f'<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">{pills_html}</div>'
+            f'<div style="font-size:10px;color:#9ca3af;">合計 {total} 件の改善点を検出</div>'
+            '</div>'
+            '</div>'
+        )
+        section_label = (
+            '<div style="padding:14px 22px 4px;display:flex;align-items:center;gap:10px;">'
+            '<div style="width:3px;height:14px;background:#2e3fa3;border-radius:2px;"></div>'
+            '<span style="font-size:10px;font-weight:700;color:#2e3fa3;'
+            'letter-spacing:0.08em;text-transform:uppercase;">現状と改善の機会</span>'
+            '</div>'
+        )
+        footer = (
+            '<div style="padding:10px 22px;border-top:0.5px solid #e5e7eb;'
+            'display:flex;align-items:center;justify-content:space-between;background:#f8faff;">'
+            '<span style="font-size:10px;color:#9ca3af;">Shinrai Prism Audit &middot; 信頼ウェブ</span>'
+            '<span style="font-size:10px;color:#9ca3af;">詳細レポートはお問い合わせください</span>'
+            '</div>'
+        )
+        return (
+            '<div style="font-family:-apple-system,BlinkMacSystemFont,Hiragino Sans,Yu Gothic,sans-serif;'
+            'background:#ffffff;border:0.5px solid #e5e7eb;border-radius:16px;'
+            'overflow:hidden;max-width:520px;margin:0 auto;">'
+            + header + score_band + section_label
+            + f'<div style="padding:8px 22px 18px;">{para_cards}</div>'
+            + footer
+            + '</div>'
         )
 
-        return f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic',sans-serif;
-                               background:#ffffff;border:1.5px solid #e5e7eb;border-radius:12px;
-                               overflow:hidden;max-width:520px;margin:0 auto;
-                               box-shadow:0 4px 20px rgba(46,63,163,0.08);">
-  <!-- Header bar -->
-  <div style="background:linear-gradient(135deg,#1e2d7d 0%,#2e3fa3 60%,#4f63c4 100%);
-              padding:14px 20px;display:flex;align-items:center;gap:10px;">
-    <div style="width:6px;height:6px;border-radius:50%;background:#a5b4fc;"></div>
-    <span style="color:#ffffff;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">Shinrai Audit Report</span>
-    <span style="color:#a5b4fc;font-size:11px;margin-left:auto;font-family:monospace;opacity:0.9;">{domain}</span>
-  </div>
-  <!-- Score row -->
-  <div style="padding:20px 24px;display:flex;align-items:center;gap:20px;
-              background:linear-gradient(to right,{score_bg},{score_bg}60,#ffffff);
-              border-bottom:1.5px solid #e5e7eb;">
-    {ring_html}
-    <div style="flex:1;min-width:0;">
-      <div style="font-size:10px;color:#6b7280;font-weight:700;letter-spacing:0.08em;
-                  text-transform:uppercase;margin-bottom:6px;">英語対応スコア</div>
-      <div style="font-size:18px;font-weight:800;color:{score_color};margin-bottom:6px;
-                  letter-spacing:-0.02em;">{jp_score_label}</div>
-      <div style="margin-bottom:4px;">{counts_html}</div>
-      <div style="font-size:10px;color:#9ca3af;">合計 {total} 件の改善点を検出</div>
-    </div>
-  </div>
-  <!-- Divider with label -->
-  <div style="display:flex;align-items:center;gap:0;background:#f8faff;">
-    <div style="height:2px;flex:1;background:linear-gradient(to right,#2e3fa320,transparent);"></div>
-    <div style="padding:8px 16px;font-size:10px;font-weight:700;color:#2e3fa3;
-                letter-spacing:0.08em;text-transform:uppercase;white-space:nowrap;">
-      ✦ 現状と改善の機会
-    </div>
-    <div style="height:2px;flex:1;background:linear-gradient(to left,#2e3fa320,transparent);"></div>
-  </div>
-  <!-- Narrative body -->
-  <div style="padding:20px 24px 16px;">
-    {summary_html}
-  </div>
-  <!-- Footer -->
-  <div style="background:#f8faff;padding:12px 20px;border-top:1.5px solid #e5e7eb;
-              display:flex;align-items:center;gap:8px;">
-    <div style="width:4px;height:4px;border-radius:50%;background:#2e3fa3;opacity:0.4;"></div>
-    <span style="font-size:10px;color:#9ca3af;letter-spacing:0.03em;">
-      Shinrai Prism Audit · 信頼ウェブ · 詳細レポートはお問い合わせください
-    </span>
-  </div>
-</div>"""
-
-    # ── Issue table fallback (original, kept for deep scans / non-experimental) ─
+    # ── Issue table fallback ──────────────────────────────────────────────────
     picked: list = []
     for category in (TEXT_TYPES, VISUAL_TYPES, UX_TYPES):
         for sev in ("high", "medium", "low"):
@@ -233,50 +264,57 @@ def build_report_card_html(scan: dict, report_summary: list[str] | None = None) 
         jp_type = JP_TYPE.get(itype, itype.replace("_", " "))
         jp_sev = JP_SEV.get(sev, sev)
         expl = iss.get("explanation", "")
-        issues_html += f"""
-        <div style="border:1px solid #e5e7eb;border-left:3px solid {col};border-radius:6px;
-                    padding:10px 14px;margin-bottom:8px;background:#fff;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
-            <span style="width:8px;height:8px;border-radius:50%;background:{col};
-                         display:inline-block;flex-shrink:0;"></span>
-            <span style="font-weight:600;font-size:12px;color:#111;">{jp_type}</span>
-            <span style="margin-left:auto;font-size:10px;font-weight:700;color:{col};
-                         background:{col}18;padding:2px 6px;border-radius:4px;">{jp_sev}</span>
-          </div>
-          <p style="font-size:11px;color:#6b7280;margin:0;line-height:1.6;">{expl}</p>
-        </div>"""
+        issues_html += (
+            f'<div style="border:1px solid #e5e7eb;border-left:3px solid {col};border-radius:6px;'
+            f'padding:10px 14px;margin-bottom:8px;background:#fff;">'
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">'
+            f'<span style="width:8px;height:8px;border-radius:50%;background:{col};'
+            f'display:inline-block;flex-shrink:0;"></span>'
+            f'<span style="font-weight:600;font-size:12px;color:#111;">{jp_type}</span>'
+            f'<span style="margin-left:auto;font-size:10px;font-weight:700;color:{col};'
+            f'background:{col}18;padding:2px 6px;border-radius:4px;">{jp_sev}</span>'
+            f'</div>'
+            f'<p style="font-size:11px;color:#6b7280;margin:0;line-height:1.6;">{expl}</p>'
+            f'</div>'
+        )
 
-    return f"""<div style="font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Yu Gothic',sans-serif;
-                           background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;
-                           overflow:hidden;max-width:520px;margin:0 auto;">
-  <div style="background:#2e3fa3;padding:12px 18px;display:flex;align-items:center;gap:10px;">
-    <span style="color:#fff;font-size:12px;font-weight:700;letter-spacing:0.05em;">SHINRAI AUDIT</span>
-    <span style="color:#a5b4fc;font-size:11px;margin-left:auto;font-family:monospace;">{domain}</span>
-  </div>
-  <div style="padding:16px 18px;display:flex;align-items:flex-start;gap:16px;background:#fff;
-              border-bottom:1px solid #e5e7eb;">
-    {ring_html}
-    <div style="flex:1;min-width:0;">
-      <div style="font-size:11px;color:#6b7280;font-weight:600;letter-spacing:0.05em;margin-bottom:4px;">
-        英語対応スコア — {jp_score_label}
-      </div>
-      {counts_html}
-      <div style="font-size:10px;color:#9ca3af;margin-top:3px;">合計 {total} 件の改善点を検出</div>
-      <p style="font-size:11px;color:#374151;line-height:1.6;margin:8px 0 0;">{summary}</p>
-    </div>
-  </div>
-  <div style="padding:14px 18px 16px;">
-    <div style="font-size:11px;color:#6b7280;font-weight:600;letter-spacing:0.05em;margin-bottom:10px;">
-      主な改善点
-    </div>
-    {issues_html if issues_html else '<p style="font-size:11px;color:#9ca3af;">改善点なし</p>'}
-  </div>
-  <div style="background:#f3f4f6;padding:12px 18px;border-top:1px solid #e5e7eb;text-align:center;">
-    <span style="font-size:10px;color:#9ca3af;display:block;margin-bottom:8px;">
-      Shinrai Prism Audit · 信頼ウェブ · 詳細レポートはお問い合わせください
-    </span>
-  </div>
-</div>"""
+    ring2 = (
+        f'<div style="position:relative;width:80px;height:80px;flex-shrink:0;">'
+        f'<div style="width:80px;height:80px;border-radius:50%;'
+        f'background:conic-gradient({score_color} {pct}%, #e5e7eb {pct}% 100%);'
+        f'display:flex;align-items:center;justify-content:center;">'
+        f'<div style="width:58px;height:58px;border-radius:50%;background:#f9fafb;'
+        f'display:flex;flex-direction:column;align-items:center;justify-content:center;">'
+        f'<span style="font-size:20px;font-weight:800;color:{score_color};line-height:1;">{score}</span>'
+        f'<span style="font-size:9px;color:#9ca3af;">/100</span>'
+        f'</div></div></div>'
+    )
+
+    return (
+        '<div style="font-family:-apple-system,BlinkMacSystemFont,Hiragino Sans,Yu Gothic,sans-serif;'
+        'background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;'
+        'overflow:hidden;max-width:520px;margin:0 auto;">'
+        f'<div style="background:#2e3fa3;padding:12px 18px;display:flex;align-items:center;gap:10px;">'
+        f'<span style="color:#fff;font-size:12px;font-weight:700;letter-spacing:0.05em;">SHINRAI AUDIT</span>'
+        f'<span style="color:#a5b4fc;font-size:11px;margin-left:auto;font-family:monospace;">{domain}</span>'
+        f'</div>'
+        f'<div style="padding:16px 18px;display:flex;align-items:flex-start;gap:16px;background:#fff;border-bottom:1px solid #e5e7eb;">'
+        + ring2 +
+        f'<div style="flex:1;min-width:0;">'
+        f'<div style="font-size:11px;color:#6b7280;font-weight:600;letter-spacing:0.05em;margin-bottom:6px;">英語対応スコア — {jp_score_label}</div>'
+        f'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px;">{pills_html}</div>'
+        f'<div style="font-size:10px;color:#9ca3af;margin-top:4px;">合計 {total} 件の改善点を検出</div>'
+        f'<p style="font-size:11px;color:#374151;line-height:1.6;margin:8px 0 0;">{summary}</p>'
+        f'</div></div>'
+        f'<div style="padding:14px 18px 16px;">'
+        f'<div style="font-size:11px;color:#6b7280;font-weight:600;letter-spacing:0.05em;margin-bottom:10px;">主な改善点</div>'
+        + (issues_html if issues_html else '<p style="font-size:11px;color:#9ca3af;">改善点なし</p>') +
+        '</div>'
+        '<div style="background:#f3f4f6;padding:12px 18px;border-top:1px solid #e5e7eb;text-align:center;">'
+        '<span style="font-size:10px;color:#9ca3af;">Shinrai Prism Audit &middot; 信頼ウェブ &middot; 詳細レポートはお問い合わせください</span>'
+        '</div>'
+        '</div>'
+    )
 
 
 # ── Email generation helpers ──────────────────────────────────────────────────
@@ -535,6 +573,7 @@ async def _do_generate_email(
     ai_settings: AISettings,
     report_card_html: str | None = None,
     sender: dict | None = None,
+    scan_for_card: dict | None = None,
 ) -> dict:
     import time
 
@@ -544,8 +583,11 @@ async def _do_generate_email(
     jp_paras = data.get("jp_paragraphs", [])
     en_paras = data.get("en_paragraphs", [])
     report_summary = data.get("report_card_summary_jp") or None
-    # Rebuild card with AI-generated narrative summary if available
-    final_card_html = build_report_card_html(scan_for_card, report_summary=report_summary)
+    # Rebuild card with AI-generated narrative summary if available, else use pre-built
+    if report_summary and scan_for_card is not None:
+        final_card_html = build_report_card_html(scan_for_card, report_summary=report_summary)
+    else:
+        final_card_html = report_card_html
     print(
         f"[generate-email] ═══ DONE in {time.monotonic() - t0:.1f}s | "
         f"tokens={data.get('_usage', {}).get('total_tokens', '?')} | "
@@ -613,7 +655,7 @@ async def generate_email(req: GenerateEmailRequest):
             "website": s.your_website,
         }
         task = asyncio.create_task(
-            _do_generate_email(prompt, system, ai_settings, report_card_html, sender)
+            _do_generate_email(prompt, system, ai_settings, report_card_html, sender, scan_for_card)
         )
         while not task.done():
             yield b"\n"

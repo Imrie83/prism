@@ -448,6 +448,10 @@ async def poll_claude_batch(batch_id: str, api_key: str, safe_to_original: dict[
         r.raise_for_status()
         raw = r.text
 
+    if not raw.strip():
+        print("[claude-batch] ⚠ results_url returned empty body")
+        return {}
+
     out: dict[str, dict] = {}
     for line in raw.splitlines():
         line = line.strip()
@@ -466,7 +470,7 @@ async def poll_claude_batch(batch_id: str, api_key: str, safe_to_original: dict[
             out[original_id] = {"error": result.get("type", "unknown")}
             continue
         message = result.get("message", {})
-        raw_text = message["content"][0]["text"]
+        raw_text = message.get("content", [{}])[0].get("text", "") if message.get("content") else ""
         u = message.get("usage", {})
         usage = {
             "prompt_tokens": u.get("input_tokens", 0),
@@ -475,12 +479,24 @@ async def poll_claude_batch(batch_id: str, api_key: str, safe_to_original: dict[
             "provider": "claude",
             "model": message.get("model", ""),
         }
+        if not raw_text:
+            print(f"[claude-batch] ⚠ empty response text for {original_id}")
+            out[original_id] = {"error": "empty_response", "url": original_id}
+            continue
         cleaned = _extract_json(raw_text)
         try:
             parsed = json.loads(cleaned)
         except json.JSONDecodeError:
-            repaired = _repair_json(cleaned)
-            parsed = json.loads(repaired)
+            try:
+                repaired = _repair_json(cleaned)
+                parsed = json.loads(repaired)
+            except (json.JSONDecodeError, Exception) as parse_err:
+                print(
+                    f"[claude-batch] ⚠ JSON parse failed for {original_id}: {parse_err}\n"
+                    f"  raw_text preview: {raw_text[:200]!r}"
+                )
+                out[original_id] = {"error": f"json_parse_failed: {parse_err}", "url": original_id}
+                continue
         parsed["_usage"] = usage
         out[original_id] = parsed
 

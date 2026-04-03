@@ -5,11 +5,12 @@ import { useAgentStore } from "../stores/agentStore";
 import { useEmailStore } from "../stores/emailStore";
 
 const DOT_COLOR = {
-  queued: "var(--ink3)",
+  queued:     "#6b7280",
   generating: "var(--blue)",
-  ready: "var(--green)",
-  error: "var(--red)",
-  sent: "var(--accent)",
+  ready:      "#22c55e",
+  error:      "var(--red)",
+  sent:       "#22c55e",
+  scheduled:  "#a78bfa",
 };
 
 function EmailQueueStatus() {
@@ -30,9 +31,9 @@ function EmailQueueStatus() {
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: "auto" }}
       exit={{ opacity: 0, height: 0 }}
-      style={{ overflow: "hidden" }}
+      style={{ overflow: "hidden", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}
     >
-      <div style={{ padding: "8px 12px 4px" }}>
+      <div style={{ padding: "8px 12px 4px", flexShrink: 0 }}>
         <span style={{
           fontSize: 10, fontWeight: 600, letterSpacing: "0.1em",
           textTransform: "uppercase", color: "var(--ink3)", fontFamily: "var(--font-mono)"
@@ -40,43 +41,44 @@ function EmailQueueStatus() {
           Email Queue
         </span>
       </div>
-      {entries.map(([url, data]) => {
-        let hostname = url;
-        try { hostname = new URL(url).hostname; } catch {}
-        return (
-          <motion.button key={url}
-            initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -8 }}
-            onClick={() => handleClick(url)}
-            style={{
-              display: "flex", alignItems: "center", gap: 8, padding: "5px 12px",
-              width: "100%", background: "none", border: "none", cursor: "pointer",
-              borderRadius: "var(--radius)", transition: "background 0.12s",
-            }}
-            whileHover={{ background: "var(--surface2)" }}
-          >
-            <motion.div
-              animate={data.status === "generating"
-                ? { scale: [1, 1.5, 1], opacity: [1, 0.4, 1] } : {}}
-              transition={{ repeat: Infinity, duration: 0.9, ease: "easeInOut" }}
+      <style>{`.eq-scroll::-webkit-scrollbar{display:none}`}</style>
+      <div className="eq-scroll" style={{ overflowY: "auto", scrollbarWidth: "none", flex: 1, minHeight: 0 }}>
+        {entries.map(([url, data]) => {
+          let hostname = url;
+          try { hostname = new URL(url).hostname; } catch {}
+          const dotColor = DOT_COLOR[data.status] || "#6b7280";
+          return (
+            <button key={url}
+              onClick={() => handleClick(url)}
+              className="sidebar__item"
               style={{
-                width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
-                background: DOT_COLOR[data.status] || "var(--ink3)",
-                boxShadow: data.status === "generating" ? "0 0 8px var(--blue)" : "none",
+                display: "flex", alignItems: "center", gap: 8,
+                width: "100%", cursor: "pointer",
               }}
-            />
-            <span style={{
-              fontSize: 11, color: "var(--ink2)", fontFamily: "var(--font-mono)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1,
-            }}>
-              {hostname}
-            </span>
-            <span style={{ fontSize: 10, color: DOT_COLOR[data.status], flexShrink: 0, fontFamily: "var(--font-mono)" }}>
-              {data.status}
-            </span>
-          </motion.button>
-        );
-      })}
+            >
+              <motion.div
+                animate={data.status === "generating"
+                  ? { scale: [1, 1.5, 1], opacity: [1, 0.4, 1] } : {}}
+                transition={{ repeat: Infinity, duration: 0.9, ease: "easeInOut" }}
+                style={{
+                  width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                  background: dotColor,
+                  boxShadow: data.status === "generating" ? "0 0 8px var(--blue)" : "none",
+                }}
+              />
+              <span style={{
+                fontSize: 11, color: "var(--ink2)", fontFamily: "var(--font-mono)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1,
+              }}>
+                {hostname}
+              </span>
+              <span style={{ fontSize: 10, color: dotColor, flexShrink: 0, fontFamily: "var(--font-mono)" }}>
+                {data.status}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </motion.div>
   );
 }

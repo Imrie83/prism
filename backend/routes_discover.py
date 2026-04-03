@@ -27,6 +27,35 @@ from .models import DiscoverSearchRequest
 router = APIRouter()
 
 
+# Aggregator/platform domains — never include as prospects.
+BLOCKED_DOMAINS = {
+    "airbnb.com", "booking.com", "tripadvisor.com", "tripadvisor.jp",
+    "jalan.net", "rakuten.co.jp", "travel.rakuten.co.jp", "yado.co.jp",
+    "ikyu.com", "rurubu.travel", "hotels.com", "expedia.com", "expedia.co.jp",
+    "agoda.com", "hostelworld.com", "ota.co.jp", "japanican.com",
+    "relux.jp", "one-night.com", "yadoplus.com",
+    "tabelog.com", "gurunavi.com", "hotpepper.jp", "yelp.com",
+    "retty.me", "hitosara.com", "google.com",
+    "line.me", "lin.ee", "instagram.com", "facebook.com", "twitter.com",
+    "x.com", "tiktok.com", "youtube.com", "linkedin.com",
+    "linktr.ee", "lit.link", "lit.page", "beacons.ai",
+    "amazon.co.jp", "amazon.com", "yahoo.co.jp", "rakuma.jp",
+    "minne.com", "creema.com", "base.ec",
+    "maps.google.com", "goo.gl",
+}
+
+
+def is_blocked(url: str) -> bool:
+    """Return True if the URL belongs to a blocked aggregator domain."""
+    try:
+        from urllib.parse import urlparse
+        host = urlparse(url).hostname or ""
+        host = host.lower().lstrip("www.")
+        return host in BLOCKED_DOMAINS or any(host.endswith("." + d) for d in BLOCKED_DOMAINS)
+    except Exception:
+        return False
+
+
 @router.post("/api/discover/search")
 async def discover_search(req: DiscoverSearchRequest):
     """Scrape Google Maps — streams NDJSON progress events, final line is the result."""
@@ -49,6 +78,7 @@ async def discover_search(req: DiscoverSearchRequest):
         skipped_no_website = 0
         skipped_already_scanned = 0
         skipped_already_discovered = 0
+        skipped_blocked = 0
 
         svc_url = os.environ.get("DISCOVER_SERVICE_URL", "http://discover:3001")
         async with httpx.AsyncClient(timeout=900.0) as client:
@@ -99,6 +129,9 @@ async def discover_search(req: DiscoverSearchRequest):
                                 if website in known_websites:
                                     skipped_already_discovered += 1
                                     continue
+                                if is_blocked(website):
+                                    skipped_blocked += 1
+                                    continue
                                 biz["session_id"] = session_id
                                 biz["keywords"] = req.keywords
                                 biz["location"] = req.location
@@ -113,7 +146,8 @@ async def discover_search(req: DiscoverSearchRequest):
                             print(
                                 f"[discover] saved={len(saved)} skipped_no_site={skipped_no_website} "
                                 f"skipped_scanned={skipped_already_scanned} "
-                                f"skipped_discovered={skipped_already_discovered}"
+                                f"skipped_discovered={skipped_already_discovered} "
+                                f"skipped_blocked={skipped_blocked}"
                             )
                             yield (
                                 json.dumps(
@@ -125,6 +159,7 @@ async def discover_search(req: DiscoverSearchRequest):
                                         "skipped_no_website": skipped_no_website,
                                         "skipped_already_scanned": skipped_already_scanned,
                                         "skipped_already_discovered": skipped_already_discovered,
+                                        "skipped_blocked": skipped_blocked,
                                     }
                                 ).encode()
                                 + b"\n"

@@ -11,7 +11,7 @@ export const useDiscoverStore = create((set, get) => ({
   // Search form
   keywords: "",
   location: "",
-  limit: 120,
+  limit: 0,
 
   // Search in-progress state
   searching: false,

@@ -46,7 +46,7 @@ from .routes_history import router as history_router
 from .routes_discover import router as discover_router
 from .utils import extract_emails_from_html
 
-app = FastAPI(title="Prism Audit API", version="4.3.0")
+app = FastAPI(title="Prism Audit API", version="4.7.2")
 
 
 @app.on_event("startup")
@@ -510,19 +510,31 @@ async def _do_batch_analyze(req) -> dict:
 
     print(f"[batch-analyze] ═══ START {len(req.urls)} URLs provider={req.settings.ai_provider}")
 
-    # Step 1: Take all screenshots in parallel
-    print(f"[batch-analyze] 📸 Taking {len(req.urls)} screenshots in parallel...")
+    # Step 1: Take all screenshots in parallel — capped at 8 concurrent to prevent
+    # Chromium OOM crashes. Each browser instance uses ~200MB RAM; 44 simultaneous
+    # instances at 200MB = ~8.8GB which exhausts most hosts and causes SIGSEGV.
+    print(f"[batch-analyze] 📸 Taking {len(req.urls)} screenshots (max 8 concurrent)...")
     t_shots = time.monotonic()
+    sem = asyncio.Semaphore(8)
+
     async def capture(url: str):
-        try:
-            shot, html, height = await take_screenshot(url, screenshot_svc)
-            return url, shot, html, height, None
-        except Exception as e:
-            return url, None, "", 0, str(e)
+        async with sem:
+            for attempt in (1, 2):  # retry once on failure
+                try:
+                    shot, html, height = await take_screenshot(url, screenshot_svc)
+                    return url, shot, html, height, None
+                except Exception as e:
+                    err = str(e)
+                    if attempt == 1:
+                        print(f"[batch-analyze] ⚠ screenshot attempt 1 failed for {url}: {err[:80]} — retrying...")
+                        await asyncio.sleep(2)
+                    else:
+                        return url, None, "", 0, err
 
     captures = await asyncio.gather(*[capture(u) for u in req.urls])
     ok_count = sum(1 for _, _, _, _, err in captures if not err)
-    print(f"[batch-analyze] ✓ Screenshots done in {time.monotonic() - t_shots:.1f}s — {ok_count}/{len(req.urls)} succeeded")
+    fail_count = len(req.urls) - ok_count
+    print(f"[batch-analyze] ✓ Screenshots done in {time.monotonic() - t_shots:.1f}s — {ok_count}/{len(req.urls)} succeeded{f', {fail_count} failed' if fail_count else ''}")
 
     # Step 2: Build batch AI requests
     batch_requests = []
@@ -544,7 +556,12 @@ async def _do_batch_analyze(req) -> dict:
         })
 
     if not batch_requests:
-        return {"results": {}, "error": "All screenshots failed"}
+        # All screenshots failed — return error entries for every URL so the
+        # frontend can reset them to "new" rather than leaving them stuck as "queued"
+        return {"results": {url: {"error": "screenshot_failed", "url": url} for url in req.urls}}
+
+    # Track which URLs had screenshot failures so we can include them in results
+    failed_urls = {url: err for url, _, _, _, err in captures if err}
 
     print(f"[batch-analyze] 🚀 Submitting {len(batch_requests)} requests to AI ({req.settings.ai_provider})...")
     t_ai = time.monotonic()
@@ -587,4 +604,8 @@ async def _do_batch_analyze(req) -> dict:
 
     elapsed = time.monotonic() - t0
     print(f"[batch-analyze] ═══ DONE {len(results)} results in {elapsed:.1f}s")
+    # Add screenshot-failed URLs as error entries so the frontend resets them to "new"
+    for url, err in failed_urls.items():
+        if url not in results:
+            results[url] = {"error": f"screenshot_failed: {err[:80]}", "url": url}
     return {"results": results}
